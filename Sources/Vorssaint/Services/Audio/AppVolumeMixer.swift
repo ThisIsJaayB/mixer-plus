@@ -50,6 +50,9 @@ struct MixerApp: Identifiable, Equatable {
     var effectiveOutputDeviceUID: String?
     var outputDeviceUnavailable: Bool
     var volume: Double
+    /// −1 (left) … 0 (centre) … +1 (right). Like the volume, resolved from
+    /// what is saved when the row is published.
+    var pan: Double = 0
 
     var identity: MixerRowIdentity {
         MixerRowIdentity(rowID: id, persistenceID: persistenceID)
@@ -140,6 +143,7 @@ final class AppVolumeMixer: ObservableObject {
     /// process runs, never written to disk.
     private var sessionVolumes: [String: Double] = [:]
     private var sessionRoutes: [String: String] = [:]
+    private var sessionPans: [String: Double] = [:]
     /// A manual "all apps" choice only changes the system default. Kept as a
     /// request, it moved apps still on another output to the default, which
     /// also caught apps playing through an output of their own, such as a
@@ -1203,6 +1207,52 @@ final class AppVolumeMixer: ObservableObject {
         reconcileEngines(with: apps)
     }
 
+    /// Pans an app between the left and right channels. Centre needs no
+    /// engine of its own, so an app at 100% and centre goes back to playing
+    /// untouched.
+    func setPan(_ pan: Double, for app: MixerApp) {
+        guard !app.isBypassed else { return }
+        engineRecovery.clear(app.id)
+        let clamped = MixerBalance.isCentred(pan) ? 0 : MixerBalance.sanitized(pan)
+        persistPan(clamped, for: app)
+        var updated = apps.first(where: { $0.id == app.id }) ?? app
+        updated.pan = clamped
+        if let index = apps.firstIndex(where: { $0.id == app.id }) { apps[index].pan = clamped }
+        applyRouting(for: updated)
+        reconcileEngines(with: apps)
+    }
+
+    private func savedPans() -> [String: Double] {
+        (UserDefaults.standard.dictionary(forKey: DefaultsKey.appPans) ?? [:])
+            .compactMapValues { ($0 as? NSNumber).map { MixerBalance.sanitized($0.doubleValue) } }
+    }
+
+    private func persistPan(_ pan: Double, for app: MixerApp) {
+        guard let id = app.persistenceID else {
+            sessionPans[app.id] = pan == 0 ? nil : pan
+            return
+        }
+        var pans = savedPans()
+        pans[id] = pan == 0 ? nil : pan
+        if pans.isEmpty {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.appPans)
+        } else {
+            UserDefaults.standard.set(pans, forKey: DefaultsKey.appPans)
+        }
+    }
+
+    /// Main thread. Gives each row the pan saved for it, as
+    /// `applyingCurrentVolumes` does for the volume.
+    private func applyingCurrentPans(to rows: [MixerApp]) -> [MixerApp] {
+        let saved = savedPans()
+        guard !saved.isEmpty || !sessionPans.isEmpty else { return rows }
+        return rows.map { row in
+            var row = row
+            row.pan = row.isBypassed ? 0 : (row.persistenceID.map { saved[$0] } ?? sessionPans[row.id]) ?? 0
+            return row
+        }
+    }
+
     func setOutputDeviceUID(_ uid: String?, for app: MixerApp) {
         guard !app.isBypassed else { return }
         if uid == MixerRoutingSupport.airPlaySpeakerChoiceID {
@@ -1405,6 +1455,7 @@ final class AppVolumeMixer: ObservableObject {
            engine.outputDeviceUID == targetOutputDeviceUID,
            !engine.requiresRebuild {
             engine.gain = MixerRoutingSupport.gain(forVolume: app.volume)
+            engine.pan = Float(app.pan)
             return
         }
         if let delay = configurationRepairDelay(for: app.id) {
@@ -1463,6 +1514,8 @@ final class AppVolumeMixer: ObservableObject {
             let engine = TapGainEngine(objects: app.audioObjects,
                                        gain: MixerRoutingSupport.gain(forVolume: app.volume),
                                        outputDeviceUID: targetOutputDeviceUID)
+            // Before the first block is heard, not once the build has landed.
+            engine?.pan = Float(app.pan)
             DispatchQueue.main.async {
                 guard let self else {
                     engine?.stop()
@@ -1541,6 +1594,7 @@ final class AppVolumeMixer: ObservableObject {
             return
         }
         engine.gain = MixerRoutingSupport.gain(forVolume: latestApp.volume)
+        engine.pan = Float(latestApp.pan)
         configurationRepairs.removeValue(forKey: id)
         let previous = engines.updateValue(engine, forKey: id)
         engineChangeAt[id] = CFAbsoluteTimeGetCurrent()
@@ -1596,6 +1650,7 @@ final class AppVolumeMixer: ObservableObject {
 
     private func rowMayBeTapped(_ app: MixerApp) -> Bool {
         guard !app.isBypassed else { return false }
+        if app.pan != 0 { return true }
         return MixerRoutingSupport.rowMayBeTapped(
             savedVolume: storedVolume(for: app.identity, saved: savedVolumes()),
             savedRouteUID: storedRoute(for: app.identity, saved: savedOutputDeviceUIDs()),
@@ -1608,6 +1663,8 @@ final class AppVolumeMixer: ObservableObject {
         // A universal route and its effective output come from one snapshot.
         // The picker may already show the next successful choice, but that
         // must not dismantle this route before its replacement is ready.
+        // A pan is an adjustment like a volume: only an engine can play it.
+        if app.pan != 0, !app.audioObjects.isEmpty, app.effectiveOutputDeviceUID != nil { return true }
         return MixerRoutingSupport.requiresEngine(hasAudioObjects: !app.audioObjects.isEmpty,
                                            volume: app.volume,
                                            selectedOutputDeviceUID: app.selectedOutputDeviceUID,
@@ -1782,12 +1839,14 @@ final class AppVolumeMixer: ObservableObject {
         applyOutputControlSnapshot(device: snapshot.defaultDeviceID, nativeVolumeSteps: snapshot.volumeStepsNeedNativeKeys,
                                    volume: snapshot.systemOutputVolume, muted: snapshot.systemOutputMuted)
 
-        guard let readApps = snapshot.apps else {
+        guard var readApps = snapshot.apps else {
             if !apps.isEmpty {
                 apps = []
             }
             return
         }
+        // The pass reads no pans from the HAL; each row takes the one saved for it.
+        readApps = applyingCurrentPans(to: readApps)
 
         pruneRunningListeners(keeping: Set(snapshot.processObjects))
         for object in snapshot.processObjects {
@@ -2975,6 +3034,8 @@ final class AppVolumeMixer: ObservableObject {
 /// any macOS while the implementation requires 14.4.
 private protocol GainEngine: AnyObject {
     var gain: Float { get set }
+    /// −1 (left) … +1 (right). An engine that cannot pan ignores it.
+    var pan: Float { get set }
     var tappedObjects: [AudioObjectID] { get }
     var outputDeviceUID: String { get }
     /// The hardware output that clocks an engine streaming elsewhere (AirPlay),
@@ -2994,6 +3055,7 @@ private protocol GainEngine: AnyObject {
 
 private extension GainEngine {
     var requiresRebuild: Bool { false }
+    var pan: Float { get { 0 } set {} }
 }
 
 /// Keeps a tap's level correct for the outputs its processes play to.
@@ -3518,6 +3580,12 @@ private final class TapGainEngine: GainEngine {
         }
     }
 
+    private let balance = MixerBalance()
+    var pan: Float {
+        get { balance.pan }
+        set { balance.pan = newValue }
+    }
+
     private let gainBox = AtomicFloatBox(1)
     /// Multiplies the gain to give back what the tap took from the app's
     /// output. Same one-float exchange as the gain.
@@ -3597,6 +3665,7 @@ private final class TapGainEngine: GainEngine {
         releaseBox.value = BoostLimiter.release(sampleRate: sampleRate)
         let release = releaseBox
         let cycles = cycleBox
+        let balance = self.balance
         let tapChannels = capture.format.channels
         guard AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregateID, nil, { now, input, _, output, _ in
             let inputBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
@@ -3634,6 +3703,7 @@ private final class TapGainEngine: GainEngine {
                 appliedGain.reset()
                 return
             }
+            balance.apply(to: outputBuffers, frames: frames)
             cycles.increment()
         }) == noErr else {
             ioProc = nil

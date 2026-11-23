@@ -443,6 +443,7 @@ if (( TEST )); then
         Sources/Vorssaint/Services/Audio/MixerRecentActivity.swift
         Sources/Vorssaint/Services/Audio/MixerMeterLevel.swift
         Sources/Vorssaint/Services/Audio/MixerFaderScale.swift
+        Sources/Vorssaint/Services/Audio/MixerBalance.swift
         Sources/Vorssaint/Services/Audio/MusicLaunchSupport.swift
         Sources/Vorssaint/Services/Bluetooth/BluetoothSleepSupport.swift
         Sources/Vorssaint/UI/MenuPanel/MixerPercentNativeTextField.swift

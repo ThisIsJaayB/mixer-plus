@@ -31,9 +31,10 @@ final class MixerRecentApps: ObservableObject {
     }
 
     /// Whether a row belongs in the list under the user's "Hide inactive apps"
-    /// choice. A row with a custom volume or output always stays, as before.
+    /// choice. A row with a custom volume, output or pan always stays, so
+    /// hiding idle rows can never conceal a setting the user may want to undo.
     func shows(_ app: MixerApp, hideInactiveApps: Bool) -> Bool {
-        MixerRoutingSupport.shouldShowApp(isPlaying: app.isPlaying || recentIDs.contains(app.id),
+        MixerRoutingSupport.shouldShowApp(isPlaying: app.isPlaying || recentIDs.contains(app.id) || app.pan != 0,
                                           volume: app.volume,
                                           selectedOutputDeviceUID: app.selectedOutputDeviceUID,
                                           hideInactiveApps: hideInactiveApps && !showAll)

@@ -583,7 +583,7 @@ struct MixerOptionsControls: View {
                 inactiveAppsVisibilityToggle
                 if hideInactiveApps { inactiveAppLingerPicker }
                 optionSwitch(MixerPlusStrings.localized(l10n.language).showLevelMeters, isOn: $showLevelMeters)
-                    .onChange(of: showLevelMeters) { _ in MixerLevelMeters.shared.sync() }
+                    .onChange(of: showLevelMeters) { MixerLevelMeters.shared.sync() }
             }
             headphoneDisconnectProtectionToggle
             preciseVolumeRollerToggle
@@ -810,7 +810,7 @@ struct MixerOptionsControls: View {
             .pickerStyle(.menu)
             .controlSize(.mini)
             .fixedSize()
-            .onChange(of: inactiveAppLinger) { _ in MixerRecentApps.shared.lingerChanged() }
+            .onChange(of: inactiveAppLinger) { MixerRecentApps.shared.lingerChanged() }
         }
     }
 }
@@ -1019,6 +1019,10 @@ private struct MixerRow: View {
                                    boostTint: boostColor,
                                    showsMeter: showLevelMeters,
                                    accessibilityLabel: app.name)
+
+                        MixerPanKnob(value: Binding(get: { app.pan }, set: { mixer.setPan($0, for: app) }),
+                                     strings: MixerPlusStrings.localized(l10n.language),
+                                     appName: app.name)
 
                         EditableVolumePercent(currentPercent: MixerRoutingSupport.displayPercent(forVolume: app.volume),
                                               maximumPercent: Int(AppVolumeMixer.maxVolume * 100),
