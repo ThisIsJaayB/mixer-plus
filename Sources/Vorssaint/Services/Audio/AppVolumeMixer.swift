@@ -55,6 +55,8 @@ struct MixerApp: Identifiable, Equatable {
     var pan: Double = 0
     /// The app has Audio Unit effects, which only an engine can play.
     var hasEffects: Bool = false
+    /// Another app is soloed, so this one plays nothing for now.
+    var isSilencedBySolo: Bool = false
 
     var identity: MixerRowIdentity {
         MixerRowIdentity(rowID: id, persistenceID: persistenceID)
@@ -146,6 +148,9 @@ final class AppVolumeMixer: ObservableObject {
     private var sessionVolumes: [String: Double] = [:]
     private var sessionRoutes: [String: String] = [:]
     private var sessionPans: [String: Double] = [:]
+    /// The rows being soloed. While any of them is listed, every other app
+    /// is silenced. Never saved: a solo is for listening, not a setting.
+    @Published private(set) var soloedIDs: Set<String> = []
     /// A manual "all apps" choice only changes the system default. Kept as a
     /// request, it moved apps still on another output to the default, which
     /// also caught apps playing through an output of their own, such as a
@@ -1248,12 +1253,28 @@ final class AppVolumeMixer: ObservableObject {
     private func applyingCurrentPans(to rows: [MixerApp]) -> [MixerApp] {
         let saved = savedPans()
         let effects = MixerEffects.shared
+        // A solo on an app that has quit silences nobody.
+        let soloed = soloedIDs.isEmpty ? [] : soloedIDs.intersection(rows.map(\.id))
         return rows.map { row in
             var row = row
             row.pan = row.isBypassed ? 0 : (row.persistenceID.map { saved[$0] } ?? sessionPans[row.id]) ?? 0
             row.hasEffects = !row.isBypassed && effects.hasEffects(row)
+            row.isSilencedBySolo = !row.isBypassed && !soloed.isEmpty && !soloed.contains(row.id)
             return row
         }
+    }
+
+    /// Solos an app, or lets it go. Apps the mixer leaves untouched for
+    /// calls keep playing: silencing one would need the tap it must not have.
+    func toggleSolo(_ app: MixerApp) {
+        guard !app.isBypassed else { return }
+        soloedIDs.formSymmetricDifference([app.id])
+        // Forget solos whose app has gone, so the set cannot grow.
+        soloedIDs.formIntersection(apps.map(\.id))
+        let next = applyingCurrentPans(to: apps)
+        if next != apps { apps = next }
+        apps.forEach(applyRouting)
+        reconcileEngines(with: apps)
     }
 
     /// An app gained its first effect or lost its last: it may now need an
@@ -1467,6 +1488,7 @@ final class AppVolumeMixer: ObservableObject {
            !engine.requiresRebuild {
             engine.gain = MixerRoutingSupport.gain(forVolume: app.volume)
             engine.pan = Float(app.pan)
+            engine.isSilenced = app.isSilencedBySolo
             return
         }
         if let delay = configurationRepairDelay(for: app.id) {
@@ -1510,6 +1532,7 @@ final class AppVolumeMixer: ObservableObject {
                 if engine == nil {
                     AirPlayRouteManager.shared.stopIfIdle()
                 }
+                engine?.isSilenced = app.isSilencedBySolo
                 DispatchQueue.main.async {
                     guard let self else {
                         engine?.stop()
@@ -1527,6 +1550,7 @@ final class AppVolumeMixer: ObservableObject {
                                        outputDeviceUID: targetOutputDeviceUID)
             // Before the first block is heard, not once the build has landed.
             engine?.pan = Float(app.pan)
+            engine?.isSilenced = app.isSilencedBySolo
             DispatchQueue.main.async {
                 guard let self else {
                     engine?.stop()
@@ -1606,6 +1630,7 @@ final class AppVolumeMixer: ObservableObject {
         }
         engine.gain = MixerRoutingSupport.gain(forVolume: latestApp.volume)
         engine.pan = Float(latestApp.pan)
+        engine.isSilenced = latestApp.isSilencedBySolo
         configurationRepairs.removeValue(forKey: id)
         let previous = engines.updateValue(engine, forKey: id)
         engineChangeAt[id] = CFAbsoluteTimeGetCurrent()
@@ -1663,7 +1688,7 @@ final class AppVolumeMixer: ObservableObject {
 
     private func rowMayBeTapped(_ app: MixerApp) -> Bool {
         guard !app.isBypassed else { return false }
-        if app.pan != 0 || app.hasEffects { return true }
+        if app.pan != 0 || app.hasEffects || app.isSilencedBySolo { return true }
         return MixerRoutingSupport.rowMayBeTapped(
             savedVolume: storedVolume(for: app.identity, saved: savedVolumes()),
             savedRouteUID: storedRoute(for: app.identity, saved: savedOutputDeviceUIDs()),
@@ -1677,7 +1702,7 @@ final class AppVolumeMixer: ObservableObject {
         // The picker may already show the next successful choice, but that
         // must not dismantle this route before its replacement is ready.
         // A pan is an adjustment like a volume: only an engine can play it.
-        if app.pan != 0 || app.hasEffects, !app.audioObjects.isEmpty,
+        if app.pan != 0 || app.hasEffects || app.isSilencedBySolo, !app.audioObjects.isEmpty,
            app.effectiveOutputDeviceUID != nil { return true }
         return MixerRoutingSupport.requiresEngine(hasAudioObjects: !app.audioObjects.isEmpty,
                                            volume: app.volume,
@@ -3050,6 +3075,8 @@ private protocol GainEngine: AnyObject {
     var gain: Float { get set }
     /// −1 (left) … +1 (right). An engine that cannot pan ignores it.
     var pan: Float { get set }
+    /// Plays nothing while another app is soloed, without losing its gain.
+    var isSilenced: Bool { get set }
     /// Where insert effects plug in, nil for an engine that cannot run them.
     var inserts: MixerInserts? { get }
     /// The rate the engine renders at, which its effects have to match.
@@ -3562,9 +3589,24 @@ private final class TapGainEngine: GainEngine {
     let tappedObjects: [AudioObjectID]
     let outputDeviceUID: String
     var clockDeviceUID: String? { nil }
+    /// The gain the mixer asked for, kept apart from what plays while a solo
+    /// on another app silences this one. Nil until either is first set.
+    private var requestedGain: Float?
     var gain: Float {
-        get { gainBox.value }
-        set { gainBox.value = min(max(newValue, 0), Float(AppVolumeMixer.maxVolume)) }
+        get { requestedGain ?? gainBox.value }
+        set {
+            let clamped = min(max(newValue, 0), Float(AppVolumeMixer.maxVolume))
+            requestedGain = clamped
+            gainBox.value = isSilenced ? 0 : clamped
+        }
+    }
+    var isSilenced = false {
+        didSet {
+            guard isSilenced != oldValue else { return }
+            let current = oldValue ? (requestedGain ?? 1) : gain
+            requestedGain = current
+            gainBox.value = isSilenced ? 0 : current
+        }
     }
 
     private final class AtomicCycleBox {
@@ -3916,9 +3958,24 @@ private final class AirPlayGainEngine: GainEngine {
     var renderCycles: UInt64 { cycleBox.value }
     private var levelWatch: LevelCompensationWatch?
 
+    /// The gain the mixer asked for, kept apart from what plays while a solo
+    /// on another app silences this one. Nil until either is first set.
+    private var requestedGain: Float?
     var gain: Float {
-        get { gainBox.value }
-        set { gainBox.value = min(max(newValue, 0), Float(AppVolumeMixer.maxVolume)) }
+        get { requestedGain ?? gainBox.value }
+        set {
+            let clamped = min(max(newValue, 0), Float(AppVolumeMixer.maxVolume))
+            requestedGain = clamped
+            gainBox.value = isSilenced ? 0 : clamped
+        }
+    }
+    var isSilenced = false {
+        didSet {
+            guard isSilenced != oldValue else { return }
+            let current = oldValue ? (requestedGain ?? 1) : gain
+            requestedGain = current
+            gainBox.value = isSilenced ? 0 : current
+        }
     }
 
     private var tapID: AudioObjectID = 0

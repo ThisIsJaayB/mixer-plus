@@ -44,3 +44,36 @@ enum MixerMeterLevelTests {
                      "level meters are on unless turned off, and backed up with the other settings")
     }
 }
+
+/// The readout beside a fader holds the loudest recent peak for a moment,
+/// then falls with the meter, and prints levels the way a desk does.
+enum MixerMeterHoldTests {
+    static func run(_ suite: TestSuite) {
+        var meter = MixerMeterLevel()
+        suite.expect(meter.heldDB == MixerMeterLevel.floorDB, "a new readout holds nothing")
+        meter.advance(peak: 0.5, elapsed: 0.1)
+        let held = meter.heldDB
+        suite.expectClose(Double(held), Double(20 * log10(Float(0.5))), "a peak is held at its level", tol: 0.001)
+        meter.advance(peak: 0, elapsed: 1)
+        suite.expect(meter.heldDB == held && !meter.isAtRest, "the peak stays while the meter falls")
+        meter.advance(peak: 0.25, elapsed: 0.3)
+        suite.expect(meter.heldDB == held, "a quieter peak does not replace the held one")
+        meter.advance(peak: 0, elapsed: 0.5)
+        suite.expect(meter.heldDB < held, "after its time the held peak starts to fall")
+        meter.advance(peak: 0.9, elapsed: 0.1)
+        suite.expect(meter.heldDB > held, "a louder peak takes the readout at once")
+        for _ in 0..<100 { meter.advance(peak: 0, elapsed: 0.1) }
+        suite.expect(meter.heldDB == MixerMeterLevel.floorDB && meter.isAtRest,
+                     "a long silence clears the readout, and only then is the meter at rest")
+        meter.advance(peak: 9, elapsed: 0.1)
+        suite.expect(meter.heldDB == 0, "a boosted peak is held at full scale, not above it")
+
+        let mark = Locale.current.decimalSeparator ?? "."
+        suite.expect(MixerMeterLevel.readout(0) == "0\(mark)0" && MixerMeterLevel.readout(-5.74) == "−5\(mark)7"
+                        && MixerMeterLevel.readout(-17.4) == "−17" && MixerMeterLevel.readout(3.5) == "+3\(mark)5",
+                     "levels print with one decimal near the top and whole numbers below −10")
+        suite.expect(MixerMeterLevel.readout(-60) == "−∞" && MixerMeterLevel.readout(-.infinity) == "−∞"
+                        && MixerMeterLevel.readout(.nan) == "−∞", "the floor and anything broken print as −∞")
+        suite.expect(MixerMeterLevel.readout(-9.96) == "−10", "a level that rounds to −10 drops its decimal")
+    }
+}

@@ -11,8 +11,8 @@ struct MixerMeterBar: NSViewRepresentable {
     func makeNSView(context: Context) -> MixerMeterView { MixerMeterView(appID: appID) }
 
     func updateNSView(_ view: MixerMeterView, context: Context) {
-        guard view.appID != appID else { return }
-        view.appID = appID
+        guard view.meterID != appID else { return }
+        view.meterID = appID
         MixerLevelMeters.shared.sync()
     }
 }
@@ -21,24 +21,22 @@ struct MixerMeterBar: NSViewRepresentable {
 /// length. A refresh only moves the mask's edge, so the panel around it is
 /// never laid out again for a meter.
 ///
-/// The view tells the meters when it can actually be seen. A row scrolled
-/// into a closed panel, or one in a window behind others, costs nothing.
-final class MixerMeterView: NSView {
-    var appID: String
+/// One bar for both sides: it shows whichever is louder.
+final class MixerMeterView: NSView, MixerMeterDisplay {
+    var meterID: String
+    private lazy var visibility = MixerMeterVisibility(self)
 
     private let gradient = CAGradientLayer()
     private let mask = CALayer()
     private var level = 0.0
     private var isHot = false
-    private var occlusionObserver: NSObjectProtocol?
-    private var isLive = false
 
     private static let normalColors = [NSColor.systemGreen, .systemGreen, .systemYellow, .systemYellow]
         .map { $0.withAlphaComponent(0.9).cgColor }
     private static let hotColors = Array(repeating: NSColor.systemRed.withAlphaComponent(0.9).cgColor, count: 4)
 
     init(appID: String) {
-        self.appID = appID
+        meterID = appID
         super.init(frame: .zero)
         wantsLayer = true
         gradient.startPoint = CGPoint(x: 0, y: 0.5)
@@ -55,37 +53,16 @@ final class MixerMeterView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit {
-        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
-    }
-
     /// Clicks, drags and scrolls belong to the fader in front.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let occlusionObserver {
-            NotificationCenter.default.removeObserver(occlusionObserver)
-            self.occlusionObserver = nil
-        }
-        if let window {
-            occlusionObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
-            ) { [weak self] _ in self?.updateLiveness() }
-        }
-        updateLiveness()
+        visibility.windowChanged()
     }
 
-    private func updateLiveness() {
-        let live = window?.occlusionState.contains(.visible) == true
-        guard live != isLive else { return }
-        isLive = live
-        if live {
-            MixerLevelMeters.shared.attach(self)
-        } else {
-            MixerLevelMeters.shared.detach(self)
-            show(level: 0, isHot: false)
-        }
+    func show(left: MixerMeterLevel, right: MixerMeterLevel) {
+        show(level: max(left.level, right.level), isHot: left.isHot || right.isHot)
     }
 
     override func layout() {
@@ -97,7 +74,7 @@ final class MixerMeterView: NSView {
         }
     }
 
-    func show(level: Double, isHot: Bool) {
+    private func show(level: Double, isHot: Bool) {
         guard level != self.level || isHot != self.isHot else { return }
         self.level = level
         withoutAnimation {

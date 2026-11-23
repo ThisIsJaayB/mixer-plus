@@ -30,6 +30,9 @@ struct MixerPlusStrings {
     /// Beside the name of a saved effect that could not be loaded.
     let effectUnavailable: String
     let effectHasNoSettings: String
+    /// The M and S keys of a channel strip.
+    let mute: String
+    let solo: String
 
     /// A time to linger the way the language writes it: "30 sec", "5 min".
     static func duration(_ seconds: Int, _ language: AppLanguage) -> String {
@@ -52,7 +55,8 @@ struct MixerPlusStrings {
             openEffect: "Open",
             removeEffect: "Remove",
             effectUnavailable: "not available",
-            effectHasNoSettings: "This effect has no adjustable settings.")
+            effectHasNoSettings: "This effect has no adjustable settings.",
+            mute: "Mute", solo: "Solo")
         case .ptBR: return .init(showAllApps: "Mostrar todos os apps", showRecentOnly: "Mostrar só os recentes",
                                  hideAfter: "Ocultar após silêncio de",
             showLevelMeters: "Mostrar medidores de nível",
@@ -65,7 +69,8 @@ struct MixerPlusStrings {
             openEffect: "Abrir",
             removeEffect: "Remover",
             effectUnavailable: "indisponível",
-            effectHasNoSettings: "Este efeito não tem ajustes.")
+            effectHasNoSettings: "Este efeito não tem ajustes.",
+            mute: "Silenciar", solo: "Solo")
         case .tr: return .init(showAllApps: "Tüm uygulamaları göster", showRecentOnly: "Yalnızca son kullanılanları göster",
                                hideAfter: "Şu kadar sessizlikten sonra gizle",
             showLevelMeters: "Seviye göstergelerini göster",
@@ -78,7 +83,8 @@ struct MixerPlusStrings {
             openEffect: "Aç",
             removeEffect: "Kaldır",
             effectUnavailable: "kullanılamıyor",
-            effectHasNoSettings: "Bu efektin ayarlanabilir seçeneği yok.")
+            effectHasNoSettings: "Bu efektin ayarlanabilir seçeneği yok.",
+            mute: "Sessize al", solo: "Solo")
         case .ru: return .init(showAllApps: "Показать все приложения", showRecentOnly: "Показать только недавние",
                                hideAfter: "Скрывать после тишины в течение",
             showLevelMeters: "Показывать индикаторы уровня",
@@ -91,7 +97,8 @@ struct MixerPlusStrings {
             openEffect: "Открыть",
             removeEffect: "Удалить",
             effectUnavailable: "недоступен",
-            effectHasNoSettings: "У этого эффекта нет настраиваемых параметров.")
+            effectHasNoSettings: "У этого эффекта нет настраиваемых параметров.",
+            mute: "Без звука", solo: "Соло")
         case .es: return .init(showAllApps: "Mostrar todas las apps", showRecentOnly: "Mostrar solo las recientes",
                                hideAfter: "Ocultar tras un silencio de",
             showLevelMeters: "Mostrar medidores de nivel",
@@ -104,7 +111,8 @@ struct MixerPlusStrings {
             openEffect: "Abrir",
             removeEffect: "Eliminar",
             effectUnavailable: "no disponible",
-            effectHasNoSettings: "Este efecto no tiene ajustes.")
+            effectHasNoSettings: "Este efecto no tiene ajustes.",
+            mute: "Silenciar", solo: "Solo")
         case .sk: return .init(showAllApps: "Zobraziť všetky aplikácie", showRecentOnly: "Zobraziť len nedávne",
                                hideAfter: "Skryť po tichu trvajúcom",
             showLevelMeters: "Zobraziť ukazovatele úrovne",
@@ -117,7 +125,8 @@ struct MixerPlusStrings {
             openEffect: "Otvoriť",
             removeEffect: "Odstrániť",
             effectUnavailable: "nedostupný",
-            effectHasNoSettings: "Tento efekt nemá žiadne nastavenia.")
+            effectHasNoSettings: "Tento efekt nemá žiadne nastavenia.",
+            mute: "Stlmiť", solo: "Sólo")
         case .de: return .init(showAllApps: "Alle Apps anzeigen", showRecentOnly: "Nur zuletzt aktive anzeigen",
                                hideAfter: "Ausblenden nach Stille von",
             showLevelMeters: "Pegelanzeigen einblenden",
@@ -130,7 +139,8 @@ struct MixerPlusStrings {
             openEffect: "Öffnen",
             removeEffect: "Entfernen",
             effectUnavailable: "nicht verfügbar",
-            effectHasNoSettings: "Dieser Effekt hat keine einstellbaren Parameter.")
+            effectHasNoSettings: "Dieser Effekt hat keine einstellbaren Parameter.",
+            mute: "Stumm", solo: "Solo")
         case .fr: return .init(showAllApps: "Afficher toutes les apps", showRecentOnly: "Afficher les récentes seulement",
                                hideAfter: "Masquer après un silence de",
             showLevelMeters: "Afficher les indicateurs de niveau",
@@ -143,7 +153,8 @@ struct MixerPlusStrings {
             openEffect: "Ouvrir",
             removeEffect: "Supprimer",
             effectUnavailable: "indisponible",
-            effectHasNoSettings: "Cet effet n’a aucun réglage.")
+            effectHasNoSettings: "Cet effet n’a aucun réglage.",
+            mute: "Muet", solo: "Solo")
         case .it: return .init(showAllApps: "Mostra tutte le app", showRecentOnly: "Mostra solo le recenti",
                                hideAfter: "Nascondi dopo un silenzio di",
             showLevelMeters: "Mostra indicatori di livello",
@@ -156,7 +167,8 @@ struct MixerPlusStrings {
             openEffect: "Apri",
             removeEffect: "Rimuovi",
             effectUnavailable: "non disponibile",
-            effectHasNoSettings: "Questo effetto non ha impostazioni regolabili.")
+            effectHasNoSettings: "Questo effetto non ha impostazioni regolabili.",
+            mute: "Muto", solo: "Solo")
         case .ja: return .init(showAllApps: "すべてのアプリを表示", showRecentOnly: "最近のアプリのみ表示",
                                hideAfter: "無音が続いたら隠すまでの時間",
             showLevelMeters: "レベルメーターを表示",
@@ -169,7 +181,8 @@ struct MixerPlusStrings {
             openEffect: "開く",
             removeEffect: "削除",
             effectUnavailable: "利用不可",
-            effectHasNoSettings: "このエフェクトには調整できる設定がありません。")
+            effectHasNoSettings: "このエフェクトには調整できる設定がありません。",
+            mute: "ミュート", solo: "ソロ")
         case .ko: return .init(showAllApps: "모든 앱 보기", showRecentOnly: "최근 앱만 보기",
                                hideAfter: "무음이 지속되면 숨기기까지",
             showLevelMeters: "레벨 미터 보기",
@@ -182,7 +195,8 @@ struct MixerPlusStrings {
             openEffect: "열기",
             removeEffect: "제거",
             effectUnavailable: "사용할 수 없음",
-            effectHasNoSettings: "이 이펙트에는 조절할 설정이 없습니다.")
+            effectHasNoSettings: "이 이펙트에는 조절할 설정이 없습니다.",
+            mute: "음소거", solo: "솔로")
         case .uk: return .init(showAllApps: "Показати всі програми", showRecentOnly: "Показати лише нещодавні",
                                hideAfter: "Приховувати після тиші протягом",
             showLevelMeters: "Показувати індикатори рівня",
@@ -195,7 +209,8 @@ struct MixerPlusStrings {
             openEffect: "Відкрити",
             removeEffect: "Вилучити",
             effectUnavailable: "недоступний",
-            effectHasNoSettings: "Цей ефект не має налаштовуваних параметрів.")
+            effectHasNoSettings: "Цей ефект не має налаштовуваних параметрів.",
+            mute: "Без звуку", solo: "Соло")
         case .zhHans: return .init(showAllApps: "显示所有 App", showRecentOnly: "仅显示最近的 App",
                                    hideAfter: "静音多久后隐藏",
             showLevelMeters: "显示电平表",
@@ -208,7 +223,8 @@ struct MixerPlusStrings {
             openEffect: "打开",
             removeEffect: "移除",
             effectUnavailable: "不可用",
-            effectHasNoSettings: "此效果没有可调整的设置。")
+            effectHasNoSettings: "此效果没有可调整的设置。",
+            mute: "静音", solo: "独奏")
         case .zhTW: return .init(showAllApps: "顯示所有 App", showRecentOnly: "只顯示最近的 App",
                                  hideAfter: "靜音多久後隱藏",
             showLevelMeters: "顯示音量表",
@@ -221,7 +237,8 @@ struct MixerPlusStrings {
             openEffect: "打開",
             removeEffect: "移除",
             effectUnavailable: "無法使用",
-            effectHasNoSettings: "此效果沒有可調整的設定。")
+            effectHasNoSettings: "此效果沒有可調整的設定。",
+            mute: "靜音", solo: "獨奏")
         case .zhHK: return .init(showAllApps: "顯示所有 App", showRecentOnly: "只顯示最近的 App",
                                  hideAfter: "靜音多久後隱藏",
             showLevelMeters: "顯示音量表",
@@ -234,7 +251,8 @@ struct MixerPlusStrings {
             openEffect: "打開",
             removeEffect: "移除",
             effectUnavailable: "無法使用",
-            effectHasNoSettings: "此效果沒有可調整的設定。")
+            effectHasNoSettings: "此效果沒有可調整的設定。",
+            mute: "靜音", solo: "獨奏")
         }
     }
 }

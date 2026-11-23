@@ -11,11 +11,11 @@ struct MixerPanKnob: View {
     @Binding var value: Double
     let strings: MixerPlusStrings
     let appName: String
+    var size: CGFloat = 20
     @Environment(\.colorScheme) private var colorScheme
     /// The pan when the drag in progress began.
     @State private var dragStart: Double?
 
-    private static let size: CGFloat = 20
     /// The pointer travel, in points, that takes the knob from centre to one end.
     private static let dragTravel = 60.0
     /// How close to the middle a drag has to come to land on centre.
@@ -43,14 +43,14 @@ struct MixerPanKnob: View {
                 .padding(1)
             Circle()
                 .fill(Color.white.opacity(colorScheme == .dark ? 0.26 : 0.8))
-                .padding(3.5)
+                .padding(size * 0.175)
             Capsule()
                 .fill(isCentred ? Color.primary.opacity(0.75) : Color.accentColor)
-                .frame(width: 1.5, height: 6)
-                .offset(y: -5)
+                .frame(width: 1.5, height: size * 0.3)
+                .offset(y: -size * 0.25)
                 .rotationEffect(.degrees(value * Self.sweep))
         }
-        .frame(width: Self.size, height: Self.size)
+        .frame(width: size, height: size)
         .contentShape(Circle())
         .gesture(
             DragGesture(minimumDistance: 1)

@@ -49,5 +49,19 @@ enum MixerFaderScaleTests {
                      "a drag clear of the mark is a boost")
         suite.expect(MixerFaderScale.draggedVolume(atPosition: unity - 0.03, maximum: 2) < 0.97,
                      "a drag clear of the mark on the left is below 100%")
+
+        // The desk asks for the panel's own width while its strips fit, then
+        // a strip at a time, and never more than the widest it may be.
+        suite.expect(MixerDeskMetrics.width(forStrips: 0) == MixerDeskMetrics.minimumWidth
+                        && MixerDeskMetrics.width(forStrips: 5) == MixerDeskMetrics.minimumWidth,
+                     "a desk of a few strips keeps the panel at its usual width")
+        suite.expect(MixerDeskMetrics.width(forStrips: 6) > MixerDeskMetrics.minimumWidth
+                        && MixerDeskMetrics.width(forStrips: 7) > MixerDeskMetrics.width(forStrips: 6),
+                     "each further strip widens the panel")
+        suite.expect(MixerDeskMetrics.width(forStrips: 8) == MixerDeskMetrics.maximumWidth
+                        && MixerDeskMetrics.width(forStrips: 40) == MixerDeskMetrics.maximumWidth,
+                     "past eight strips the panel stops growing and the apps scroll")
+        suite.expect(MixerDeskMetrics.width(forStrips: -3) == MixerDeskMetrics.minimumWidth,
+                     "a nonsense count cannot shrink the panel")
     }
 }

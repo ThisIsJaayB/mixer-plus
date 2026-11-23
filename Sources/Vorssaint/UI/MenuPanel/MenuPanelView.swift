@@ -87,6 +87,8 @@ struct MenuPanelView: View {
     @AppStorage(DefaultsKey.panelShowWallpaper) private var showWallpaper = true
     @AppStorage(DefaultsKey.panelSectionOrder) private var sectionOrderRaw = ""
     @State private var navigableContentHeight: CGFloat = 0
+    /// The width the mixer desk asked for. Only the mixer tab uses it.
+    @State private var mixerDeskWidth = MixerDeskMetrics.minimumWidth
     @State private var metricContentHeight: CGFloat = 0
     @State private var updateBannerHeight: CGFloat = 0
     @State private var selectedSection: PanelSectionID = PanelLayout.order.first ?? .keepAwake
@@ -215,14 +217,16 @@ struct MenuPanelView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     section(for: activeSection, collapsible: false)
                 }
-                .frame(width: 308)
+                .frame(width: navigableContentWidth)
+                .environment(\.mixerDeskLayout, true)
+                .onPreferenceChange(MixerDeskWidthKey.self) { mixerDeskWidth = $0 }
             }
-            .frame(width: 308, height: navigableScrollHeight)
+            .frame(width: navigableContentWidth, height: navigableScrollHeight)
 
             footer
         }
         .padding(12)
-        .frame(width: 332, height: navigablePanelHeight)
+        .frame(width: navigableContentWidth + 24, height: navigablePanelHeight)
         .panelGlassSurface()
     }
 
@@ -263,6 +267,13 @@ struct MenuPanelView: View {
 
     private var activeSection: PanelSectionID {
         visibleSections.contains(selectedSection) ? selectedSection : (visibleSections.first ?? .keepAwake)
+    }
+
+    /// The panel's usual width, except on the mixer tab, where the desk may
+    /// ask for more room as apps appear.
+    private var navigableContentWidth: CGFloat {
+        guard activeSection == .mixer, AppFeature.mixer.isAvailable else { return MixerDeskMetrics.minimumWidth }
+        return min(max(mixerDeskWidth, MixerDeskMetrics.minimumWidth), MixerDeskMetrics.maximumWidth)
     }
 
     private var navigableScrollHeight: CGFloat {

@@ -10,6 +10,7 @@ import SwiftUI
 /// boosts, with the slider and percentage turning amber in the boost range.
 struct MixerSection: View {
     @Environment(\.notchPresentation) private var inNotch
+    @Environment(\.mixerDeskLayout) private var deskAllowed
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var mixer = AppVolumeMixer.shared
     @ObservedObject private var inputManager = AudioInputDeviceManager.shared
@@ -44,7 +45,9 @@ struct MixerSection: View {
                 }
             } else {
                 PanelSection(.mixer, title: l10n.s.mixerSection, collapsible: collapsible) {
-                    mixerControls.panelCard(interactive: false)
+                    // The desk is sized to the panel's full width, so it fills
+                    // the card edge to edge and pads the rows under it itself.
+                    mixerControls.panelCard(interactive: false, padded: !showsDesk)
                 }
             }
         }
@@ -57,7 +60,37 @@ struct MixerSection: View {
         .onAppear { mixer.refreshApps() }
     }
 
+    /// The desk of channel strips, where the surface can widen for one and
+    /// the system can tap apps at all.
+    private var showsDesk: Bool { deskAllowed && !settingsMode && AppVolumeMixer.isSupported }
+
+    @ViewBuilder
     private var mixerControls: some View {
+        if showsDesk { deskControls } else { listControls }
+    }
+
+    private var deskControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            MixerDesk(apps: mixer.needsPermission ? [] : visibleApps)
+            VStack(alignment: .leading, spacing: 8) {
+                if let outputSwitchError = mixer.outputSwitchError {
+                    inputMessage(String(format: l10n.s.mixerSystemOutputErrorFormat, outputSwitchError),
+                                 systemImage: "exclamationmark.triangle")
+                }
+                if mixer.needsPermission {
+                    permissionHint
+                } else {
+                    showAllToggle
+                }
+                Divider()
+                optionsDisclosure
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
+        }
+    }
+
+    private var listControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             audioDevicesSection
 

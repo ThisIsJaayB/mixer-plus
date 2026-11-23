@@ -40,3 +40,22 @@ enum MixerFaderScale {
         return volume(atPosition: position, maximum: maximum)
     }
 }
+
+/// The measurements every strip of the mixer desk shares, so they line up.
+enum MixerDeskMetrics {
+    static let stripWidth: CGFloat = 58
+    static let stripSpacing: CGFloat = 2
+    static let faderHeight: CGFloat = 142
+    static let capHeight: CGFloat = 30
+    /// The panel's usual content width, and the widest the desk may make it.
+    static let minimumWidth: CGFloat = 308
+    static let maximumWidth: CGFloat = 488
+
+    /// The width a desk of `strips` channels wants: the panel's own width
+    /// while they fit, growing a strip at a time up to the maximum. Past
+    /// that the app strips scroll sideways.
+    static func width(forStrips strips: Int) -> CGFloat {
+        let wanted = CGFloat(max(strips, 0)) * (stripWidth + stripSpacing) + 8
+        return min(max(wanted, minimumWidth), maximumWidth)
+    }
+}

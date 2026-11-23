@@ -7,11 +7,59 @@ import Combine
 import CoreAudio
 import CoreAudioTapCompat
 
-/// The level meters behind the mixer's faders.
+/// Something on screen that shows a mixer level: a meter or a peak readout.
+protocol MixerMeterDisplay: AnyObject {
+    /// The row it shows: an app's id, or `MixerLevelMeters.mainOutputID`.
+    var meterID: String { get }
+    func show(left: MixerMeterLevel, right: MixerMeterLevel)
+}
+
+/// Tells the meters when a display can actually be seen. A row in a closed
+/// panel, or one in a window behind others, then costs nothing.
+final class MixerMeterVisibility {
+    private weak var display: (NSView & MixerMeterDisplay)?
+    private var observer: NSObjectProtocol?
+    private var isLive = false
+
+    init(_ display: NSView & MixerMeterDisplay) { self.display = display }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    /// Call from the view's `viewDidMoveToWindow`.
+    func windowChanged() {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+        if let window = display?.window {
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.update() }
+        }
+        update()
+    }
+
+    private func update() {
+        guard let display else { return }
+        let live = display.window?.occlusionState.contains(.visible) == true
+        guard live != isLive else { return }
+        isLive = live
+        if live {
+            MixerLevelMeters.shared.attach(display)
+        } else {
+            MixerLevelMeters.shared.detach(display)
+            display.show(left: MixerMeterLevel(), right: MixerMeterLevel())
+        }
+    }
+}
+
+/// The level meters of the mixer.
 ///
 /// A meter exists only for an app that is playing and whose row is on screen:
-/// each visible `MixerMeterView` registers here, and the last one to leave
-/// stops everything. An app is heard through a listen-only tap, so metering
+/// each visible display registers here, and the last one to leave stops
+/// everything. An app is heard through a listen-only tap, so metering
 /// never changes what it plays. A few times a second the loudest sample of
 /// each tap goes straight to its view's layer, without SwiftUI.
 final class MixerLevelMeters {
@@ -20,9 +68,13 @@ final class MixerLevelMeters {
     /// How often the meters move while any is live.
     private static let interval: TimeInterval = 1.0 / 15
 
-    private var views = NSHashTable<MixerMeterView>.weakObjects()
+    /// The id of the meter on everything the Mac plays, as opposed to one app.
+    static let mainOutputID = "bus:main"
+
+    private var views = NSHashTable<AnyObject>.weakObjects()
+    private var displays: [any MixerMeterDisplay] { views.allObjects.compactMap { $0 as? any MixerMeterDisplay } }
     private var readers: [String: AnyObject] = [:]
-    private var levels: [String: MixerMeterLevel] = [:]
+    private var levels: [String: (left: MixerMeterLevel, right: MixerMeterLevel)] = [:]
     /// The fader each metered app sits at, so the meter follows the slider.
     private var gains: [String: Float] = [:]
     /// The apps that should have a reader right now.
@@ -38,7 +90,7 @@ final class MixerLevelMeters {
 
     // MARK: - Views
 
-    func attach(_ view: MixerMeterView) {
+    func attach(_ view: any MixerMeterDisplay) {
         views.add(view)
         if subscriptions.isEmpty {
             let mixer = AppVolumeMixer.shared
@@ -46,18 +98,20 @@ final class MixerLevelMeters {
                 .store(in: &subscriptions)
             mixer.$currentOutputDeviceUID.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.sync() }
                 .store(in: &subscriptions)
+            mixer.$systemOutputMuted.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.sync() }
+                .store(in: &subscriptions)
         }
         sync()
     }
 
-    func detach(_ view: MixerMeterView) {
+    func detach(_ view: any MixerMeterDisplay) {
         views.remove(view)
         sync()
     }
 
     /// The preference changed, or a row now shows another app.
     func sync() {
-        let shown = Set(views.allObjects.map(\.appID))
+        let shown = Set(displays.map(\.meterID))
         guard Self.isEnabled, !shown.isEmpty, #available(macOS 14.4, *) else { return stopAll() }
 
         let mixer = AppVolumeMixer.shared
@@ -72,16 +126,33 @@ final class MixerLevelMeters {
                reader.objects == app.audioObjects, reader.hostUID == hostUID { continue }
             (readers[app.id] as? MixerLevelReader)?.stop()
             readers[app.id] = MixerLevelReader(objects: app.audioObjects, hostUID: hostUID)
-            levels[app.id] = levels[app.id] ?? MixerMeterLevel()
+            levels[app.id] = levels[app.id] ?? (MixerMeterLevel(), MixerMeterLevel())
+        }
+        // Everything the Mac plays, heard before the output's own volume:
+        // the level arriving at the speakers, silent while they are muted.
+        let main = Self.mainOutputID
+        if shown.contains(main), let hostUID {
+            gains[main] = mixer.systemOutputMuted == true ? 0 : 1
+            wanted.insert(main)
+            if (readers[main] as? MixerLevelReader)?.hostUID != hostUID {
+                (readers[main] as? MixerLevelReader)?.stop()
+                readers[main] = MixerLevelReader(objects: [], hostUID: hostUID)
+                levels[main] = levels[main] ?? (MixerMeterLevel(), MixerMeterLevel())
+            }
         }
         // An app that stopped keeps its reader until its meter has fallen
         // back, so a pause between tracks does not rebuild the tap; one
         // whose row left the screen goes at once.
         for id in Array(readers.keys)
-        where !wanted.contains(id) && (!shown.contains(id) || levels[id]?.isAtRest != false) {
+        where !wanted.contains(id) && (!shown.contains(id) || isAtRest(id)) {
             drop(id)
         }
         if readers.isEmpty { stopTimer() } else { startTimer() }
+    }
+
+    private func isAtRest(_ id: String) -> Bool {
+        guard let level = levels[id] else { return true }
+        return level.left.isAtRest && level.right.isAtRest
     }
 
     private func drop(_ id: String) {
@@ -89,7 +160,7 @@ final class MixerLevelMeters {
         readers[id] = nil
         levels[id] = nil
         gains[id] = nil
-        show(MixerMeterLevel(), for: id)
+        show((MixerMeterLevel(), MixerMeterLevel()), for: id)
     }
 
     private func stopAll() {
@@ -121,23 +192,28 @@ final class MixerLevelMeters {
         for (id, reader) in readers {
             guard let reader = reader as? MixerLevelReader, var level = levels[id] else { continue }
             let before = level
-            level.advance(peak: reader.takePeak() * (gains[id] ?? 1), elapsed: Float(Self.interval))
+            let peaks = reader.takePeaks()
+            let gain = gains[id] ?? 1
+            level.left.advance(peak: peaks.left * gain, elapsed: Float(Self.interval))
+            level.right.advance(peak: peaks.right * gain, elapsed: Float(Self.interval))
             levels[id] = level
-            if level.level != before.level || level.isHot != before.isHot { show(level, for: id) }
-            if level.isAtRest, !wanted.contains(id) { finished = true }
+            if level.left != before.left || level.right != before.right { show(level, for: id) }
+            if isAtRest(id), !wanted.contains(id) { finished = true }
         }
         // The meter of an app that stopped has fallen back: its reader can go.
         if finished { sync() }
     }
 
-    private func show(_ level: MixerMeterLevel, for id: String) {
-        for view in views.allObjects where view.appID == id {
-            view.show(level: level.level, isHot: level.isHot)
+    private func show(_ level: (left: MixerMeterLevel, right: MixerMeterLevel), for id: String) {
+        for display in displays where display.meterID == id {
+            display.show(left: level.left, right: level.right)
         }
     }
 }
 
-/// Hears one app through a listen-only tap and keeps its loudest sample.
+/// Hears one app through a listen-only tap and keeps the loudest sample of
+/// each side. With no processes to hear, it listens to everything the Mac
+/// plays instead.
 ///
 /// The same shape as the island's level reader: a private tap on the app's
 /// processes, read through a private aggregate device on the current output.
@@ -153,7 +229,8 @@ private final class MixerLevelReader {
     let hostUID: String
 
     private static let queue = DispatchQueue(label: "com.vorssaint.utils.mixer.meters", qos: .utility)
-    private let peak = AtomicFloatBox(0)
+    private let leftPeak = AtomicFloatBox(0)
+    private let rightPeak = AtomicFloatBox(0)
     /// What the stereo mixdown took from the app's level on a wide output.
     private let compensation = AtomicFloatBox(1)
     // Touched only on `queue`.
@@ -171,13 +248,15 @@ private final class MixerLevelReader {
         }
     }
 
-    /// The loudest sample since the last call, 0 (silence) to 1 (full scale).
-    /// A buffer landing at the same moment may be missed, which a meter
-    /// refreshed many times a second cannot show.
-    func takePeak() -> Float {
-        let value = peak.value
-        if value != 0 { peak.value = 0 }
-        return value * compensation.value
+    /// Each side's loudest sample since the last call, 0 (silence) to 1
+    /// (full scale). A buffer landing at the same moment may be missed,
+    /// which a meter refreshed many times a second cannot show.
+    func takePeaks() -> (left: Float, right: Float) {
+        let level = compensation.value
+        let left = leftPeak.value, right = rightPeak.value
+        if left != 0 { leftPeak.value = 0 }
+        if right != 0 { rightPeak.value = 0 }
+        return (left * level, right * level)
     }
 
     func stop() {
@@ -188,7 +267,8 @@ private final class MixerLevelReader {
     }
 
     private func build() -> Bool {
-        guard let uuid = createPrivateAudioTap(.stereoMixdown, processes: objects as [NSNumber], deviceUID: nil,
+        guard let uuid = createPrivateAudioTap(objects.isEmpty ? .stereoGlobalExcluding : .stereoMixdown,
+                                               processes: objects as [NSNumber], deviceUID: nil,
                                                name: "Vorssaint Mixer Levels", muteBehavior: .unmuted, id: &tapID)
         else { return false }
         var format = AudioStreamBasicDescription()
@@ -220,7 +300,7 @@ private final class MixerLevelReader {
             return false
         }
         // The audio thread touches only these captured values, never this object.
-        let peak = self.peak
+        let leftPeak = self.leftPeak, rightPeak = self.rightPeak
         let channels = Int(format.mChannelsPerFrame)
         guard AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregateID, nil, { _, input, _, output, _ in
             // The device beneath the aggregate would otherwise play whatever
@@ -229,15 +309,24 @@ private final class MixerLevelReader {
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
             guard let index = MixerRender.tapBufferIndex(in: buffers, tapChannels: channels),
                   let data = buffers[index].mData?.assumingMemoryBound(to: Float.self) else { return }
-            var loudest: Float = 0
-            vDSP_maxmgv(data, 1, &loudest,
-                        vDSP_Length(Int(buffers[index].mDataByteSize) / MemoryLayout<Float>.size))
-            // Only this thread raises the peak, so a read then a write is enough.
-            if loudest > peak.value { peak.value = loudest }
+            // The buffer's own layout: the lone buffer the tap index falls
+            // back to may not have the tap's two channels.
+            let stride = max(1, Int(buffers[index].mNumberChannels))
+            let frames = vDSP_Length(Int(buffers[index].mDataByteSize) / (MemoryLayout<Float>.size * stride))
+            var left: Float = 0
+            vDSP_maxmgv(data, vDSP_Stride(stride), &left, frames)
+            var right = left
+            if stride > 1 { vDSP_maxmgv(data + 1, vDSP_Stride(stride), &right, frames) }
+            // Only this thread raises a peak, so a read then a write is enough.
+            if left > leftPeak.value { leftPeak.value = left }
+            if right > rightPeak.value { rightPeak.value = right }
         }) == noErr, let ioProc, AudioDeviceStart(aggregateID, ioProc) == noErr else { return false }
 
-        let compensation = self.compensation
-        levelWatch = LevelCompensationWatch.started(objects: objects) { compensation.value = $0 }
+        // The mixdown of everything is not divided the way one app's is.
+        if !objects.isEmpty {
+            let compensation = self.compensation
+            levelWatch = LevelCompensationWatch.started(objects: objects) { compensation.value = $0 }
+        }
         return true
     }
 

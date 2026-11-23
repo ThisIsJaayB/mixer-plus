@@ -77,6 +77,7 @@ struct MetricsTests {
                 MixerFeatureTests.run(suite)
                 MixerRecentActivityTests.run(suite)
                 MixerMeterLevelTests.run(suite)
+                MixerMeterHoldTests.run(suite)
                 MixerFaderScaleTests.run(suite)
                 MixerBalanceTests.run(suite)
                 MixerInsertsTests.run(suite)

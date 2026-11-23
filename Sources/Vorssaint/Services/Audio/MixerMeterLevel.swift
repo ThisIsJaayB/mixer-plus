@@ -23,9 +23,24 @@ struct MixerMeterLevel: Equatable {
     /// The bar's length, 0 (floor or quieter) to 1 (full scale).
     private(set) var level = 0.0
     private(set) var isHot = false
+    /// The loudest recent peak, in dBFS, for the readout beside a fader: it
+    /// stays for `holdTime` after it was reached, then falls with the meter.
+    private(set) var heldDB = floorDB
+    private var heldFor: Float = 0
+    static let holdTime: Float = 1.5
 
-    /// Whether the meter has fallen all the way back, so its reader can go.
-    var isAtRest: Bool { shownDB <= Self.floorDB }
+    /// Whether the meter and its readout have fallen all the way back, so
+    /// the reader behind them can go.
+    var isAtRest: Bool { shownDB <= Self.floorDB && heldDB <= Self.floorDB }
+
+    /// A level the way a desk prints it: one decimal near the top, whole
+    /// numbers below −10, and −∞ at the floor.
+    static func readout(_ db: Float) -> String {
+        guard db.isFinite, db > floorDB else { return "−∞" }
+        // The decimal mark follows the user's region, as a level does everywhere else.
+        let text = String(format: abs(db) < 9.95 ? "%.1f" : "%.0f", locale: .current, abs(db))
+        return (db < -0.05 ? "−" : db > 0.05 ? "+" : "") + text
+    }
 
     /// Takes the loudest sample since the last call (0 silent, 1 full scale)
     /// and the seconds since then.
@@ -35,5 +50,14 @@ struct MixerMeterLevel: Equatable {
         let fraction = Double((shownDB - Self.floorDB) / -Self.floorDB)
         level = (fraction / Self.resolution).rounded() * Self.resolution
         isHot = peakDB >= Self.hotDB
+
+        let step = max(elapsed, 0)
+        if peakDB >= heldDB {
+            heldDB = min(peakDB, 0)
+            heldFor = 0
+        } else {
+            heldFor += step
+            if heldFor > Self.holdTime { heldDB = max(peakDB, heldDB - Self.fallRate * step, Self.floorDB) }
+        }
     }
 }
