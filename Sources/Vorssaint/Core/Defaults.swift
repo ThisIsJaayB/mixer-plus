@@ -167,6 +167,8 @@ enum DefaultsKey {
     static let mixerShowFinder = "mixerShowFinder"
     static let mixerAppArrangement = "mixerAppArrangement"
     static let mixerHideInactiveApps = "mixerHideInactiveApps"
+    static let mixerShowLevelMeters = "mixerShowLevelMeters" // live level behind each app fader while its row is on screen
+    static let mixerInactiveAppLingerSeconds = "mixerInactiveAppLingerSeconds" // how long a quiet app stays listed while inactive apps are hidden
     static let mixerHiddenApps = "mixerHiddenApps"        // [persistence id: display name] kept out of the mixer list (issue #300)
     static let mixerLowerVolumeOnHeadphonesDisconnect = "mixerLowerVolumeOnHeadphonesDisconnect"
     static let mixerHeadphonesDisconnectVolumePercent = "mixerHeadphonesDisconnectVolumePercent"
@@ -1363,6 +1365,8 @@ enum Defaults {
         DefaultsKey.updateShowcaseMediaOverride: "",
         DefaultsKey.mixerShowFinder: true,
         DefaultsKey.mixerHideInactiveApps: false,
+        DefaultsKey.mixerInactiveAppLingerSeconds: MixerRecentActivity.defaultLinger,
+        DefaultsKey.mixerShowLevelMeters: true,
         DefaultsKey.mixerAppArrangement: "",
         DefaultsKey.mixerLowerVolumeOnHeadphonesDisconnect: false,
         DefaultsKey.mixerHeadphonesDisconnectVolumePercent: defaultMixerHeadphonesDisconnectVolumePercent,

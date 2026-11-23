@@ -75,6 +75,9 @@ struct MetricsTests {
                 MixerInputVolumeContract.run(suite)
                 MixerPercentKeyTests.run(suite)
                 MixerFeatureTests.run(suite)
+                MixerRecentActivityTests.run(suite)
+                MixerMeterLevelTests.run(suite)
+                MixerFaderScaleTests.run(suite)
             }),
             ("audio-priority", { AudioPriorityTests.run(suite) }),
             ("shelf", { ShelfFeatureTests.run(suite) }),

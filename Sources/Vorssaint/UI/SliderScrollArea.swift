@@ -31,11 +31,14 @@ extension SliderScroll {
     }
 }
 
-/// Laid over a SwiftUI slider, it takes only scroll events; clicks and drags
-/// reach the slider underneath.
+/// Laid over a SwiftUI slider, it takes scroll events and, when a reset value
+/// is given, the second click of a double-click; every other click and drag
+/// reaches the slider underneath.
 struct SliderScrollArea: NSViewRepresentable {
     @Binding var value: Double
     let range: ClosedRange<Double>
+    /// Where a double-click puts the slider; nil leaves double-clicks alone.
+    var doubleClickValue: Double? = nil
 
     func makeNSView(context: Context) -> AreaView { AreaView() }
 
@@ -53,6 +56,32 @@ struct SliderScrollArea: NSViewRepresentable {
         override func hitTest(_ point: NSPoint) -> NSView? {
             guard NSApp.currentEvent?.type == .scrollWheel else { return nil }
             return super.hitTest(point)
+        }
+
+        /// Watches this app's own clicks while the view is in a window. The
+        /// slider underneath tracks the mouse itself, so a click never reaches
+        /// a view laid over it; the second click of a pair is taken here,
+        /// before the slider can read it as a jump to that position.
+        private var clickMonitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let clickMonitor {
+                NSEvent.removeMonitor(clickMonitor)
+                self.clickMonitor = nil
+            }
+            guard window != nil else { return }
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                guard let self, event.clickCount == 2, isEnabled, event.window === window,
+                      let area, let reset = area.doubleClickValue,
+                      bounds.contains(convert(event.locationInWindow, from: nil)) else { return event }
+                area.value = reset
+                return nil
+            }
+        }
+
+        deinit {
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         }
 
         override func scrollWheel(with event: NSEvent) {

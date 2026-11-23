@@ -15,6 +15,7 @@ struct NotchMixerView: View {
     @ObservedObject private var mixer = AppVolumeMixer.shared
     @ObservedObject private var input = AudioInputDeviceManager.shared
     @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var recent = MixerRecentApps.shared
     @AppStorage(DefaultsKey.mixerAppArrangement) private var arrangementValue = ""
     @AppStorage(DefaultsKey.mixerHideInactiveApps) private var hideInactiveApps = false
     @State private var showingOptions = false
@@ -34,11 +35,8 @@ struct NotchMixerView: View {
 
     /// The same order and the same hidden rows as the panel's list.
     private var apps: [MixerApp] {
-        arrangement.ordered(mixer.apps, identity: { $0.persistenceID }).filter { app in
-            MixerRoutingSupport.shouldShowApp(isPlaying: app.isPlaying, volume: app.volume,
-                                              selectedOutputDeviceUID: app.selectedOutputDeviceUID,
-                                              hideInactiveApps: hideInactiveApps)
-        }
+        arrangement.ordered(mixer.apps, identity: { $0.persistenceID })
+            .filter { recent.shows($0, hideInactiveApps: hideInactiveApps) }
     }
 
     var body: some View {

@@ -15,6 +15,7 @@ struct MixerSection: View {
     @ObservedObject private var inputManager = AudioInputDeviceManager.shared
     @ObservedObject private var audioPriority = AudioPriorityService.shared
     @ObservedObject private var micMute = MicMuteService.shared
+    @ObservedObject private var recent = MixerRecentApps.shared
     @AppStorage(DefaultsKey.liquidGlassEnabled) private var windowsGlass = false
     @AppStorage(DefaultsKey.notchLiquidGlassEnabled) private var islandGlass = false
     @AppStorage(DefaultsKey.mixerAppArrangement)
@@ -72,6 +73,9 @@ struct MixerSection: View {
                 emptyLabel(l10n.s.mixerEmpty)
             } else {
                 mixerRows
+            }
+            if AppVolumeMixer.isSupported, !mixer.needsPermission {
+                showAllToggle
             }
 
             Divider()
@@ -400,11 +404,26 @@ struct MixerSection: View {
     private var arrangement: MixerAppArrangement { MixerAppArrangement(rawValue: arrangementValue) }
 
     private var visibleApps: [MixerApp] {
-        arrangement.ordered(mixer.apps, identity: { $0.persistenceID }).filter { app in
-            MixerRoutingSupport.shouldShowApp(isPlaying: app.isPlaying,
-                                              volume: app.volume,
-                                              selectedOutputDeviceUID: app.selectedOutputDeviceUID,
-                                              hideInactiveApps: hideInactiveApps)
+        arrangement.ordered(mixer.apps, identity: { $0.persistenceID })
+            .filter { recent.shows($0, hideInactiveApps: hideInactiveApps) }
+    }
+
+    /// Offered while inactive apps are hidden and there is something to bring
+    /// back, and kept while everything is listed so it can be undone.
+    @ViewBuilder
+    private var showAllToggle: some View {
+        if hideInactiveApps, recent.showAll || visibleApps.count < mixer.apps.count {
+            let strings = MixerPlusStrings.localized(l10n.language)
+            Button {
+                recent.showAll.toggle()
+            } label: {
+                Label(recent.showAll ? strings.showRecentOnly : strings.showAllApps,
+                      systemImage: recent.showAll ? "clock" : "list.bullet")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -545,6 +564,10 @@ struct MixerOptionsControls: View {
     @ObservedObject private var permissions = Permissions.shared
     @AppStorage(DefaultsKey.mixerHideInactiveApps)
     private var hideInactiveApps = false
+    @AppStorage(DefaultsKey.mixerInactiveAppLingerSeconds)
+    private var inactiveAppLinger = MixerRecentActivity.defaultLinger
+    @AppStorage(DefaultsKey.mixerShowLevelMeters)
+    private var showLevelMeters = true
     @AppStorage(DefaultsKey.mixerLowerVolumeOnHeadphonesDisconnect)
     private var lowerOnHeadphonesDisconnect = false
     @AppStorage(DefaultsKey.mixerHeadphonesDisconnectVolumePercent)
@@ -558,6 +581,9 @@ struct MixerOptionsControls: View {
         VStack(alignment: .leading, spacing: 8) {
             if AppVolumeMixer.isSupported {
                 inactiveAppsVisibilityToggle
+                if hideInactiveApps { inactiveAppLingerPicker }
+                optionSwitch(MixerPlusStrings.localized(l10n.language).showLevelMeters, isOn: $showLevelMeters)
+                    .onChange(of: showLevelMeters) { _ in MixerLevelMeters.shared.sync() }
             }
             headphoneDisconnectProtectionToggle
             preciseVolumeRollerToggle
@@ -751,17 +777,40 @@ struct MixerOptionsControls: View {
     }
 
     private var inactiveAppsVisibilityToggle: some View {
-        let label = FeatureStrings.mixer(l10n.language).hideInactiveApps
+        optionSwitch(FeatureStrings.mixer(l10n.language).hideInactiveApps, isOn: $hideInactiveApps)
+    }
+
+    private func optionSwitch(_ label: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 6)
+            Toggle(label, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .accessibilityLabel(label)
+        }
+    }
+
+    private var inactiveAppLingerPicker: some View {
+        let label = MixerPlusStrings.localized(l10n.language).hideAfter
         return HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 6)
-            Toggle(label, isOn: $hideInactiveApps)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .accessibilityLabel(label)
+            Picker(label, selection: $inactiveAppLinger) {
+                ForEach(MixerRecentActivity.lingerChoices, id: \.self) { seconds in
+                    Text(MixerPlusStrings.duration(seconds, l10n.language)).tag(seconds)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.mini)
+            .fixedSize()
+            .onChange(of: inactiveAppLinger) { _ in MixerRecentApps.shared.lingerChanged() }
         }
     }
 }
@@ -881,6 +930,7 @@ struct SoundOutputSwitcherControls: View {
 private struct MixerRow: View {
     @ObservedObject private var mixer = AppVolumeMixer.shared
     @ObservedObject private var l10n = L10n.shared
+    @AppStorage(DefaultsKey.mixerShowLevelMeters) private var showLevelMeters = true
     @Environment(\.colorScheme) private var colorScheme
     let app: MixerApp
     let normalTint: Color
@@ -962,14 +1012,13 @@ private struct MixerRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     HStack(spacing: 8) {
-                        MixerVolumeSlider(value: volumeBinding,
-                                          normalTint: normalTint,
-                                          boostTint: boostColor,
-                                          isBoosting: isBoosting,
-                                          accentRevision: accentRevision,
-                                          glassEnabled: glassEnabled,
-                                          maximum: AppVolumeMixer.maxVolume,
-                                          accessibilityLabel: app.name)
+                        MixerFader(value: volumeBinding,
+                                   appID: app.id,
+                                   maximum: AppVolumeMixer.maxVolume,
+                                   isBoosting: isBoosting,
+                                   boostTint: boostColor,
+                                   showsMeter: showLevelMeters,
+                                   accessibilityLabel: app.name)
 
                         EditableVolumePercent(currentPercent: MixerRoutingSupport.displayPercent(forVolume: app.volume),
                                               maximumPercent: Int(AppVolumeMixer.maxVolume * 100),
