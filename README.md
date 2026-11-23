@@ -1,3 +1,62 @@
+> [!IMPORTANT]
+> **This is an unofficial fork of [Vorssaint](https://github.com/vorssaint/vorssaint-utils).** It is not made,
+> endorsed or supported by the Vorssaint project. Please do not ask the original maintainer for help with it.
+
+# What this fork adds
+
+This fork keeps everything in Vorssaint and rebuilds its volume mixer as a small mixing desk, with features
+brought over from AuxBar, a per-app mixer by the same author. The rest of the app is unchanged.
+
+<p align="center">
+  <img src="docs/fork/mixer-desk.png" width="460" alt="The volume mixer as a desk of channel strips: three apps with Audio Unit effects, pan knobs, faders and stereo meters, beside the microphone, system sounds and main output">
+</p>
+
+| Addition | What it does |
+|---|---|
+| **Mixing-desk layout** | The mixer tab is a row of vertical channel strips: microphone on the left, one strip per app, system sounds and the main output on the right. The panel widens as apps appear and scrolls sideways past eight strips. |
+| **Audio Unit effects** | Add any installed Audio Unit effect to an app, in a chain, before its fader. Plugins load out of process, so a crashing plugin cannot take the app down. Chains and plugin settings are saved per app. |
+| **Pan** | A pan knob on every app. |
+| **Solo** | Silence every other app with one key. Never saved, so it cannot be left on by accident. |
+| **Level meters** | A stereo meter and a held peak readout on every playing app, measured after effects, fader and pan, plus a meter on the main output. |
+| **Recently active apps** | With "Hide inactive apps" on, an app stays listed for a chosen time after it goes quiet (10 seconds to 5 minutes), and one button shows every open app again. |
+| **Fader feel** | 100% sits about four fifths of the way up, leaving the rest for the boost to 200%. A drag near the mark lands on it; a double-click resets to it. |
+
+Meters and effects run only while they are needed: a meter measures only while its strip is on screen, and an app
+at 100% with no pan or effects is still left completely untouched, as in Vorssaint.
+
+## Status
+
+- **Experimental.** Built and tested on one Mac (macOS 27, Apple Silicon). There are no downloads; build it yourself.
+- **Not yet covered:** apps routed to AirPlay ignore pan and effects, and the Dynamic Island and the Settings
+  window still show the original mixer layout.
+- **Effects are stereo.** On an output with more than two channels they apply to the front pair.
+
+## Build
+
+```sh
+git clone https://github.com/ThisIsJaayB/vorssaint-utils.git
+cd vorssaint-utils
+git switch mixer-plus
+./build.sh --dev --install
+```
+
+This builds the separate Developer variant, which installs beside an official Vorssaint without replacing it.
+Xcode Command Line Tools are the only requirement.
+
+## Licence and names
+
+The code is GPL-3.0-or-later, the same as Vorssaint, and every change in this fork is published here under
+that licence. The Vorssaint name, logo and icon belong to the original project and are covered by its
+[trademark policy](TRADEMARKS.md); they appear below only because the rest of this page is the original
+project's README.
+
+---
+
+**Everything below this line is the original project's README, unchanged.** Its website, downloads, Homebrew
+cask, sponsors, Discord and contact address all belong to the original Vorssaint, not to this fork.
+
+---
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/logo-dark.svg">
