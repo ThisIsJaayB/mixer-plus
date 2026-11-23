@@ -104,7 +104,12 @@ final class MixerEffects: ObservableObject {
     private var rebuilds: [String: DispatchWorkItem] = [:]
     let windows = MixerEffectWindows()
 
-    private init() {}
+    private init() {
+        // A backup restored while the app runs replaces what is saved. Chains
+        // already loaded keep playing; the rest read the new ones.
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil,
+                                               queue: .main) { [weak self] _ in self?.saved = nil }
+    }
 
     // MARK: - Keys and counts
 
@@ -124,15 +129,35 @@ final class MixerEffects: ObservableObject {
 
     // MARK: - Storage
 
-    private static var fileURL: URL? {
+    /// Chains live in the preferences, so a settings backup carries them
+    /// like an app's volume. Builds before that kept them in this file.
+    private static var legacyFileURL: URL? {
         PrivateFileStore.containerURL?.appendingPathComponent("MixerEffects.plist")
     }
 
     private func savedChains() -> [String: [MixerEffectRecord]] {
         if let saved { return saved }
-        let loaded = MixerEffectRecord.chains(fromFileData: Self.fileURL.flatMap { try? Data(contentsOf: $0) })
+        let defaults = UserDefaults.standard
+        var loaded = MixerEffectRecord.chains(fromPropertyList: defaults.dictionary(forKey: DefaultsKey.appEffectChains))
+        // Move a file from an earlier build across once, then let it go.
+        if let url = Self.legacyFileURL, let data = try? Data(contentsOf: url) {
+            if loaded.isEmpty {
+                loaded = MixerEffectRecord.chains(fromFileData: data)
+                saved = loaded
+                store(loaded)
+            }
+            try? FileManager.default.removeItem(at: url)
+        }
         saved = loaded
         return loaded
+    }
+
+    private func store(_ chains: [String: [MixerEffectRecord]]) {
+        if let plist = MixerEffectRecord.propertyList(for: chains) {
+            UserDefaults.standard.set(plist, forKey: DefaultsKey.appEffectChains)
+        } else {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.appEffectChains)
+        }
     }
 
     private func save(_ key: String) {
@@ -140,10 +165,8 @@ final class MixerEffects: ObservableObject {
         guard !Self.isSessionKey(key), let chain = chains[key] else { return }
         var all = savedChains()
         all[key] = chain.isEmpty ? nil : chain.map { $0.currentRecord() }
+        store(all)
         saved = all
-        guard let url = Self.fileURL, let data = MixerEffectRecord.fileData(for: all),
-              PrivateFileStore.createDirectory(at: url.deletingLastPathComponent()) else { return }
-        _ = PrivateFileStore.write(data, to: url)
     }
 
     /// A plugin's knobs move many times a second; the file is written once

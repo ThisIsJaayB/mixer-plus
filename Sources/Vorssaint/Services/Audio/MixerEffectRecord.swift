@@ -6,7 +6,7 @@ import Foundation
 /// One saved effect in an app's chain: which Audio Unit, how it is shown,
 /// whether it is bypassed, and the unit's own saved state.
 ///
-/// Kept as a property list, since a plugin's state is one and can be large.
+/// Kept as a property list, since a plugin's state is one.
 /// A record whose plugin cannot be loaded (uninstalled, or failing to start)
 /// is carried through untouched, so saving the chain never throws away the
 /// settings of a plugin that is only missing for now.
@@ -62,19 +62,30 @@ struct MixerEffectRecord {
         return plist
     }
 
-    /// The saved chains of every app, keyed by the app's settings key.
-    static func chains(fromFileData data: Data?) -> [String: [MixerEffectRecord]] {
-        guard let data,
-              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
-        else { return [:] }
+    /// The saved chains of every app, keyed by the app's settings key, from
+    /// what the preferences hold. Anything that is not a chain is skipped,
+    /// so a damaged or hand-edited entry costs only itself.
+    static func chains(fromPropertyList plist: Any?) -> [String: [MixerEffectRecord]] {
+        guard let plist = plist as? [String: Any] else { return [:] }
         return plist.compactMapValues { value in
             let records = (value as? [Any])?.compactMap(MixerEffectRecord.init(propertyList:)) ?? []
             return records.isEmpty ? nil : records
         }
     }
 
-    static func fileData(for chains: [String: [MixerEffectRecord]]) -> Data? {
+    /// What to store for a set of chains, nil when there is nothing to keep.
+    static func propertyList(for chains: [String: [MixerEffectRecord]]) -> [String: Any]? {
         let plist = chains.filter { !$0.value.isEmpty }.mapValues { $0.map(\.propertyList) }
-        return try? PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
+        return plist.isEmpty ? nil : plist
+    }
+
+    /// The chains in a file written before they moved into the preferences.
+    static func chains(fromFileData data: Data?) -> [String: [MixerEffectRecord]] {
+        chains(fromPropertyList: data.flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) })
+    }
+
+    static func fileData(for chains: [String: [MixerEffectRecord]]) -> Data? {
+        try? PropertyListSerialization.data(fromPropertyList: propertyList(for: chains) ?? [:],
+                                            format: .binary, options: 0)
     }
 }

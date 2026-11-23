@@ -118,5 +118,24 @@ enum MixerInsertsTests {
         suite.expect(MixerEffectRecord.chains(fromFileData: mixed)["app"]?.count == 1
                         && MixerEffectRecord.chains(fromFileData: mixed)["other"] == nil,
                      "damaged entries are skipped and the rest of the file is kept")
+
+        // Chains are kept in the preferences, so a settings backup carries them.
+        let stored = MixerEffectRecord.propertyList(for: ["com.example.player": [record], "com.example.none": []])
+        suite.expect(stored?.keys.sorted() == ["com.example.player"]
+                        && PropertyListSerialization.propertyList(stored as Any, isValidFor: .xml),
+                     "a set of chains is a property list a backup file can hold")
+        suite.expect(MixerEffectRecord.propertyList(for: ["com.example.none": []]) == nil
+                        && MixerEffectRecord.propertyList(for: [:]) == nil,
+                     "with no chains left there is nothing to store")
+        let reread = MixerEffectRecord.chains(fromPropertyList: stored)
+        suite.expect(reread["com.example.player"]?.first?.name == "Low Pass"
+                        && reread["com.example.player"]?.first?.state?["cutoff"] as? Double == 900,
+                     "chains read back from the preferences as they were stored")
+        suite.expect(MixerEffectRecord.chains(fromPropertyList: nil).isEmpty
+                        && MixerEffectRecord.chains(fromPropertyList: "text").isEmpty
+                        && MixerEffectRecord.chains(fromPropertyList: ["app": "junk"]).isEmpty,
+                     "preferences that hold no chains read as none")
+        suite.expect(SettingsBackupSupport.exportKeys().contains(DefaultsKey.appEffectChains),
+                     "effect chains are part of a settings backup")
     }
 }

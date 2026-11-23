@@ -1277,6 +1277,10 @@ final class AppVolumeMixer: ObservableObject {
         reconcileEngines(with: apps)
     }
 
+    /// The probe on what an app's engine plays, when it has an engine that
+    /// can be measured. The level meters read it in place of a tap.
+    func outputProbe(for id: String) -> MixerOutputProbe? { engines[id]?.outputProbe }
+
     /// An app gained its first effect or lost its last: it may now need an
     /// engine, or no longer need one.
     func effectsChanged() {
@@ -3081,6 +3085,8 @@ private protocol GainEngine: AnyObject {
     var inserts: MixerInserts? { get }
     /// The rate the engine renders at, which its effects have to match.
     var renderSampleRate: Double { get }
+    /// Measures what the engine plays, nil for one that cannot be metered.
+    var outputProbe: MixerOutputProbe? { get }
     var tappedObjects: [AudioObjectID] { get }
     var outputDeviceUID: String { get }
     /// The hardware output that clocks an engine streaming elsewhere (AirPlay),
@@ -3103,6 +3109,7 @@ private extension GainEngine {
     var pan: Float { get { 0 } set {} }
     var inserts: MixerInserts? { nil }
     var renderSampleRate: Double { 0 }
+    var outputProbe: MixerOutputProbe? { nil }
 }
 
 /// Keeps a tap's level correct for the outputs its processes play to.
@@ -3642,6 +3649,8 @@ private final class TapGainEngine: GainEngine {
         }
     }
 
+    private let probe = MixerOutputProbe()
+    var outputProbe: MixerOutputProbe? { probe }
     private let insertPoint = MixerInserts()
     var inserts: MixerInserts? { insertPoint }
     private(set) var renderSampleRate: Double = 0
@@ -3733,6 +3742,7 @@ private final class TapGainEngine: GainEngine {
         let cycles = cycleBox
         let balance = self.balance
         let inserts = insertPoint
+        let probe = self.probe
         renderSampleRate = sampleRate
         let tapChannels = capture.format.channels
         guard AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregateID, nil, { now, input, _, output, _ in
@@ -3775,6 +3785,7 @@ private final class TapGainEngine: GainEngine {
             }
             inserts.process(stage, outputBuffers, frames: frames, gain: gain)
             balance.apply(to: outputBuffers, frames: frames)
+            probe.measure(outputBuffers, frames: frames)
             cycles.increment()
         }) == noErr else {
             ioProc = nil

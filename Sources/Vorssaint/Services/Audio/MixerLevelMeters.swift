@@ -59,7 +59,9 @@ final class MixerMeterVisibility {
 ///
 /// A meter exists only for an app that is playing and whose row is on screen:
 /// each visible display registers here, and the last one to leave stops
-/// everything. An app is heard through a listen-only tap, so metering
+/// everything. An app the mixer is already processing is measured where its
+/// engine plays it, after effects, fader and pan. Any other is heard through
+/// a listen-only tap, so metering
 /// never changes what it plays. A few times a second the loudest sample of
 /// each tap goes straight to its view's layer, without SwiftUI.
 final class MixerLevelMeters {
@@ -74,6 +76,8 @@ final class MixerLevelMeters {
     private var views = NSHashTable<AnyObject>.weakObjects()
     private var displays: [any MixerMeterDisplay] { views.allObjects.compactMap { $0 as? any MixerMeterDisplay } }
     private var readers: [String: AnyObject] = [:]
+    /// The engines being measured directly, in place of a reader.
+    private var probes: [String: MixerOutputProbe] = [:]
     private var levels: [String: (left: MixerMeterLevel, right: MixerMeterLevel)] = [:]
     /// The fader each metered app sits at, so the meter follows the slider.
     private var gains: [String: Float] = [:]
@@ -122,6 +126,20 @@ final class MixerLevelMeters {
             // A bypassed app is one whose audio must not be touched at all.
             guard app.isPlaying, !app.isBypassed, !app.audioObjects.isEmpty, let hostUID else { continue }
             wanted.insert(app.id)
+            // An engine shows what is actually played. Its level already
+            // carries the fader, so nothing is scaled afterwards.
+            if let probe = mixer.outputProbe(for: app.id) {
+                if probes[app.id] !== probe {
+                    probes[app.id]?.isMetering = false
+                    probe.isMetering = true
+                    probes[app.id] = probe
+                    (readers[app.id] as? MixerLevelReader)?.stop()
+                    readers[app.id] = nil
+                    levels[app.id] = levels[app.id] ?? (MixerMeterLevel(), MixerMeterLevel())
+                }
+                continue
+            }
+            if let stale = probes.removeValue(forKey: app.id) { stale.isMetering = false }
             if let reader = readers[app.id] as? MixerLevelReader,
                reader.objects == app.audioObjects, reader.hostUID == hostUID { continue }
             (readers[app.id] as? MixerLevelReader)?.stop()
@@ -143,11 +161,11 @@ final class MixerLevelMeters {
         // An app that stopped keeps its reader until its meter has fallen
         // back, so a pause between tracks does not rebuild the tap; one
         // whose row left the screen goes at once.
-        for id in Array(readers.keys)
+        for id in Set(readers.keys).union(probes.keys)
         where !wanted.contains(id) && (!shown.contains(id) || isAtRest(id)) {
             drop(id)
         }
-        if readers.isEmpty { stopTimer() } else { startTimer() }
+        if readers.isEmpty && probes.isEmpty { stopTimer() } else { startTimer() }
     }
 
     private func isAtRest(_ id: String) -> Bool {
@@ -158,13 +176,14 @@ final class MixerLevelMeters {
     private func drop(_ id: String) {
         if #available(macOS 14.4, *) { (readers[id] as? MixerLevelReader)?.stop() }
         readers[id] = nil
+        probes.removeValue(forKey: id)?.isMetering = false
         levels[id] = nil
         gains[id] = nil
         show((MixerMeterLevel(), MixerMeterLevel()), for: id)
     }
 
     private func stopAll() {
-        for id in Array(readers.keys) { drop(id) }
+        for id in Set(readers.keys).union(probes.keys) { drop(id) }
         wanted = []
         stopTimer()
         if views.count == 0 { subscriptions.removeAll() }
@@ -189,16 +208,28 @@ final class MixerLevelMeters {
     private func tick() {
         guard #available(macOS 14.4, *) else { return }
         var finished = false
-        for (id, reader) in readers {
-            guard let reader = reader as? MixerLevelReader, var level = levels[id] else { continue }
+        let mixer = AppVolumeMixer.shared
+        for id in Set(readers.keys).union(probes.keys) {
+            guard var level = levels[id] else { continue }
             let before = level
-            let peaks = reader.takePeaks()
-            let gain = gains[id] ?? 1
+            let peaks: (left: Float, right: Float)
+            let gain: Float
+            if let probe = probes[id] {
+                peaks = probe.takePeaks()
+                gain = 1
+            } else if let reader = readers[id] as? MixerLevelReader {
+                peaks = reader.takePeaks()
+                gain = gains[id] ?? 1
+            } else {
+                continue
+            }
             level.left.advance(peak: peaks.left * gain, elapsed: Float(Self.interval))
             level.right.advance(peak: peaks.right * gain, elapsed: Float(Self.interval))
             levels[id] = level
             if level.left != before.left || level.right != before.right { show(level, for: id) }
             if isAtRest(id), !wanted.contains(id) { finished = true }
+            // An engine that came or went changes where this app is measured.
+            if id != Self.mainOutputID, mixer.outputProbe(for: id) !== probes[id] { finished = true }
         }
         // The meter of an app that stopped has fallen back: its reader can go.
         if finished { sync() }
