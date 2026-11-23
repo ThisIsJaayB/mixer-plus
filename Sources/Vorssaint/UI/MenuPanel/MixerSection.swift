@@ -931,6 +931,8 @@ private struct MixerRow: View {
     @ObservedObject private var mixer = AppVolumeMixer.shared
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.mixerShowLevelMeters) private var showLevelMeters = true
+    @ObservedObject private var effects = MixerEffects.shared
+    @State private var showsEffects = false
     @Environment(\.colorScheme) private var colorScheme
     let app: MixerApp
     let normalTint: Color
@@ -989,6 +991,7 @@ private struct MixerRow: View {
                     }
                     Spacer(minLength: 4)
 
+                    if !app.isBypassed { effectsButton }
                     if app.persistenceID != nil {
                         Menu { arrangementActions } label: {
                             Image(systemName: "ellipsis")
@@ -1071,6 +1074,9 @@ private struct MixerRow: View {
                         .buttonStyle(.plain)
                     }
 
+                    if showsEffects {
+                        MixerEffectsList(app: app)
+                    }
                     if app.supportsVolumeOverride {
                         Label(sharingStrings.sharingWarning, systemImage: "exclamationmark.triangle")
                             .font(.system(size: 9.5))
@@ -1099,6 +1105,27 @@ private struct MixerRow: View {
                 }
             }
         }
+    }
+
+    /// Opens the app's effects under its row, and says how many it has.
+    private var effectsButton: some View {
+        let count = effects.count(for: app)
+        let label = MixerPlusStrings.localized(l10n.language).effects
+        return Button {
+            showsEffects.toggle()
+        } label: {
+            Text(count > 0 ? "fx \(count)" : "fx")
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(count > 0 ? Color.accentColor : Color.secondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Color.primary.opacity(showsEffects ? 0.14 : 0.06)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel("\(label): \(app.name)")
+        .accessibilityValue("\(count)")
     }
 
     @ViewBuilder

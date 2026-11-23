@@ -53,6 +53,8 @@ struct MixerApp: Identifiable, Equatable {
     /// −1 (left) … 0 (centre) … +1 (right). Like the volume, resolved from
     /// what is saved when the row is published.
     var pan: Double = 0
+    /// The app has Audio Unit effects, which only an engine can play.
+    var hasEffects: Bool = false
 
     var identity: MixerRowIdentity {
         MixerRowIdentity(rowID: id, persistenceID: persistenceID)
@@ -1245,12 +1247,21 @@ final class AppVolumeMixer: ObservableObject {
     /// `applyingCurrentVolumes` does for the volume.
     private func applyingCurrentPans(to rows: [MixerApp]) -> [MixerApp] {
         let saved = savedPans()
-        guard !saved.isEmpty || !sessionPans.isEmpty else { return rows }
+        let effects = MixerEffects.shared
         return rows.map { row in
             var row = row
             row.pan = row.isBypassed ? 0 : (row.persistenceID.map { saved[$0] } ?? sessionPans[row.id]) ?? 0
+            row.hasEffects = !row.isBypassed && effects.hasEffects(row)
             return row
         }
+    }
+
+    /// An app gained its first effect or lost its last: it may now need an
+    /// engine, or no longer need one.
+    func effectsChanged() {
+        let next = applyingCurrentPans(to: apps)
+        if next != apps { apps = next }
+        reconcileEngines(with: apps)
     }
 
     func setOutputDeviceUID(_ uid: String?, for app: MixerApp) {
@@ -1601,6 +1612,8 @@ final class AppVolumeMixer: ObservableObject {
         // The fresh engine starts its render count over.
         engineRenderProgress.removeValue(forKey: id)
         previous?.stop()
+        MixerEffects.shared.engineInstalled(for: latestApp, inserts: engine.inserts,
+                                            sampleRate: engine.renderSampleRate)
         // A tap mutes immediately. Arm the render check here instead of
         // waiting for another HAL event, or a dead first aggregate can leave
         // the app silent until the mixer quits (issue #601).
@@ -1650,7 +1663,7 @@ final class AppVolumeMixer: ObservableObject {
 
     private func rowMayBeTapped(_ app: MixerApp) -> Bool {
         guard !app.isBypassed else { return false }
-        if app.pan != 0 { return true }
+        if app.pan != 0 || app.hasEffects { return true }
         return MixerRoutingSupport.rowMayBeTapped(
             savedVolume: storedVolume(for: app.identity, saved: savedVolumes()),
             savedRouteUID: storedRoute(for: app.identity, saved: savedOutputDeviceUIDs()),
@@ -1664,7 +1677,8 @@ final class AppVolumeMixer: ObservableObject {
         // The picker may already show the next successful choice, but that
         // must not dismantle this route before its replacement is ready.
         // A pan is an adjustment like a volume: only an engine can play it.
-        if app.pan != 0, !app.audioObjects.isEmpty, app.effectiveOutputDeviceUID != nil { return true }
+        if app.pan != 0 || app.hasEffects, !app.audioObjects.isEmpty,
+           app.effectiveOutputDeviceUID != nil { return true }
         return MixerRoutingSupport.requiresEngine(hasAudioObjects: !app.audioObjects.isEmpty,
                                            volume: app.volume,
                                            selectedOutputDeviceUID: app.selectedOutputDeviceUID,
@@ -3036,6 +3050,10 @@ private protocol GainEngine: AnyObject {
     var gain: Float { get set }
     /// −1 (left) … +1 (right). An engine that cannot pan ignores it.
     var pan: Float { get set }
+    /// Where insert effects plug in, nil for an engine that cannot run them.
+    var inserts: MixerInserts? { get }
+    /// The rate the engine renders at, which its effects have to match.
+    var renderSampleRate: Double { get }
     var tappedObjects: [AudioObjectID] { get }
     var outputDeviceUID: String { get }
     /// The hardware output that clocks an engine streaming elsewhere (AirPlay),
@@ -3056,6 +3074,8 @@ private protocol GainEngine: AnyObject {
 private extension GainEngine {
     var requiresRebuild: Bool { false }
     var pan: Float { get { 0 } set {} }
+    var inserts: MixerInserts? { nil }
+    var renderSampleRate: Double { 0 }
 }
 
 /// Keeps a tap's level correct for the outputs its processes play to.
@@ -3580,6 +3600,10 @@ private final class TapGainEngine: GainEngine {
         }
     }
 
+    private let insertPoint = MixerInserts()
+    var inserts: MixerInserts? { insertPoint }
+    private(set) var renderSampleRate: Double = 0
+
     private let balance = MixerBalance()
     var pan: Float {
         get { balance.pan }
@@ -3666,6 +3690,8 @@ private final class TapGainEngine: GainEngine {
         let release = releaseBox
         let cycles = cycleBox
         let balance = self.balance
+        let inserts = insertPoint
+        renderSampleRate = sampleRate
         let tapChannels = capture.format.channels
         guard AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregateID, nil, { now, input, _, output, _ in
             let inputBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
@@ -3693,9 +3719,11 @@ private final class TapGainEngine: GainEngine {
             let gain = box.value * ramp.next(toward: compensation.value, hostTime: now.pointee.mHostTime)
             // `render` silences whatever it does not fill, so every path from
             // here on leaves the output written.
+            // With effects in place the fader comes after them: see `MixerInserts`.
+            let stage = inserts.load()
             let frames = MixerRender.render(source: inputBuffers[tapIndex],
                                             into: outputBuffers,
-                                            gain: gain,
+                                            gain: MixerInserts.renderGain(gain, stage: stage),
                                             rampingFrom: appliedGain)
             // Draining delayed audio alone must not hide a stalled capture
             // from the engine's recovery check.
@@ -3703,6 +3731,7 @@ private final class TapGainEngine: GainEngine {
                 appliedGain.reset()
                 return
             }
+            inserts.process(stage, outputBuffers, frames: frames, gain: gain)
             balance.apply(to: outputBuffers, frames: frames)
             cycles.increment()
         }) == noErr else {

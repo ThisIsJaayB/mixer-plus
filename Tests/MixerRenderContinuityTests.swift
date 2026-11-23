@@ -28,6 +28,7 @@ enum MixerRenderContinuityTests {
         let ramp = TapLevelRamp()
         let appliedGain = MixerRender.AppliedGain()
         let balance = MixerBalance()
+        let inserts = MixerInserts()
         let cycles = Counter()
         let configuration = Configuration()
         let tapChannels: Int
