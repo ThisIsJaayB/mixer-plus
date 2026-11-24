@@ -65,8 +65,8 @@ fork's.
 ## Build
 
 ```sh
-git clone https://github.com/ThisIsJaayB/vorssaint-utils.git
-cd vorssaint-utils
+git clone https://github.com/ThisIsJaayB/mixer-plus.git
+cd mixer-plus
 ./build.sh --dev --install
 ```
 

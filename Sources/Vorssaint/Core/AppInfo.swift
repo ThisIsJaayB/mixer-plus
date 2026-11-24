@@ -11,7 +11,7 @@ enum AppInfo {
     static let forkCredit = "A fork of Vorssaint"
     static let copyright = "© 2026 Vorssaint"
     static let websiteURL = URL(string: "https://vorssaint.com")!
-    static let repositoryURL = URL(string: "https://github.com/ThisIsJaayB/vorssaint-utils")!
+    static let repositoryURL = URL(string: "https://github.com/ThisIsJaayB/mixer-plus")!
     /// The project this fork is built from.
     static let originalRepositoryURL = URL(string: "https://github.com/vorssaint/vorssaint-utils")!
     /// Where to support the original project, whose work most of this app is.
