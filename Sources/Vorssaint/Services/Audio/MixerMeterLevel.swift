@@ -33,6 +33,20 @@ struct MixerMeterLevel: Equatable {
     /// the reader behind them can go.
     var isAtRest: Bool { shownDB <= Self.floorDB && heldDB <= Self.floorDB }
 
+    /// The gain an output's own volume control applies, for a meter that
+    /// sits after it. The output's level in decibels is used when the device
+    /// reports one. Otherwise the slider position is read on the curve the
+    /// app faders use, which is close for outputs that say nothing.
+    static func outputGain(decibels: Float?, volume: Double?) -> Float {
+        if let decibels, !decibels.isNaN {
+            // An output at the bottom of its range reports minus infinity.
+            return decibels == -.infinity ? 0 : min(powf(10, decibels / 20), 1)
+        }
+        guard let volume, volume.isFinite else { return 1 }
+        let level = Float(min(max(volume, 0), 1))
+        return level * level
+    }
+
     /// A level the way a desk prints it: one decimal near the top, whole
     /// numbers below −10, and −∞ at the floor.
     static func readout(_ db: Float) -> String {

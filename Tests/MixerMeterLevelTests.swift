@@ -75,5 +75,28 @@ enum MixerMeterHoldTests {
         suite.expect(MixerMeterLevel.readout(-60) == "−∞" && MixerMeterLevel.readout(-.infinity) == "−∞"
                         && MixerMeterLevel.readout(.nan) == "−∞", "the floor and anything broken print as −∞")
         suite.expect(MixerMeterLevel.readout(-9.96) == "−10", "a level that rounds to −10 drops its decimal")
+
+        // The output's meter sits after its fader.
+        suite.expectClose(Double(MixerMeterLevel.outputGain(decibels: 0, volume: 1)), 1,
+                          "an output at full volume passes the level unchanged")
+        suite.expectClose(Double(MixerMeterLevel.outputGain(decibels: -20, volume: 0.5)), 0.1,
+                          "an output that reports its level is read in decibels, whatever the slider says")
+        suite.expectClose(Double(MixerMeterLevel.outputGain(decibels: -6.0206, volume: nil)), 0.5,
+                          "minus six decibels halves the level", tol: 0.0005)
+        suite.expect(MixerMeterLevel.outputGain(decibels: -.infinity, volume: 0.3) == 0,
+                     "an output at the bottom of its range plays nothing")
+        suite.expect(MixerMeterLevel.outputGain(decibels: 12, volume: 1) == 1,
+                     "an output cannot raise the meter above the level it was given")
+        suite.expectClose(Double(MixerMeterLevel.outputGain(decibels: nil, volume: 0.5)), 0.25,
+                          "an output that reports no level is read from the slider, on the app faders' curve")
+        suite.expect(MixerMeterLevel.outputGain(decibels: .nan, volume: 0.5) == 0.25,
+                     "a level that is not a number falls back to the slider")
+        suite.expect(MixerMeterLevel.outputGain(decibels: nil, volume: 0) == 0
+                        && MixerMeterLevel.outputGain(decibels: nil, volume: 7) == 1
+                        && MixerMeterLevel.outputGain(decibels: nil, volume: -2) == 0,
+                     "a slider out of range is brought back to its ends")
+        suite.expect(MixerMeterLevel.outputGain(decibels: nil, volume: nil) == 1
+                        && MixerMeterLevel.outputGain(decibels: nil, volume: .nan) == 1,
+                     "an output with no volume control at all leaves the level alone")
     }
 }

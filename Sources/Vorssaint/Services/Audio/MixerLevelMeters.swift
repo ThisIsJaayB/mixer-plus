@@ -104,8 +104,73 @@ final class MixerLevelMeters {
                 .store(in: &subscriptions)
             mixer.$systemOutputMuted.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.sync() }
                 .store(in: &subscriptions)
+            // The output's meter sits after its fader, so it follows it.
+            mixer.$systemOutputVolume.receive(on: DispatchQueue.main)
+                .sink { [weak self] in self?.refreshOutputGain(volume: $0) }
+                .store(in: &subscriptions)
+            mixer.$currentOutputDeviceUID.receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refreshOutputGain(volume: AppVolumeMixer.shared.systemOutputVolume) }
+                .store(in: &subscriptions)
         }
         sync()
+    }
+
+    /// What the output's own volume does to the level, 0 to 1.
+    private var outputGain: Float = 1
+    private var outputGainRequest = 0
+
+    /// The slider's position gives an answer at once; the output's real
+    /// level in decibels, read off the main thread, replaces it when it
+    /// arrives. Reading it can wait on a device that is reconnecting.
+    private func refreshOutputGain(volume: Double?) {
+        outputGainRequest += 1
+        let request = outputGainRequest
+        outputGain = MixerMeterLevel.outputGain(decibels: nil, volume: volume)
+        sync()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let decibels = Self.readOutputDecibels(volume: volume)
+            DispatchQueue.main.async {
+                guard let self, self.outputGainRequest == request, decibels != nil else { return }
+                self.outputGain = MixerMeterLevel.outputGain(decibels: decibels, volume: volume)
+                self.sync()
+            }
+        }
+    }
+
+    /// The default output's volume in decibels: what it reports, or what it
+    /// says the slider's position comes to. Nil for an output with neither.
+    private static func readOutputDecibels(volume: Double?) -> Float? {
+        func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope,
+                     _ element: AudioObjectPropertyElement) -> AudioObjectPropertyAddress {
+            AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: element)
+        }
+        var device = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var defaultOutput = address(kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
+                                    kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultOutput, 0, nil,
+                                         &size, &device) == noErr, device != 0 else { return nil }
+        // The main control, or the loudest of the first two channels.
+        var levels: [Float] = []
+        for element in [kAudioObjectPropertyElementMain, 1, 2] as [AudioObjectPropertyElement] {
+            var value = Float32(0)
+            var valueSize = UInt32(MemoryLayout<Float32>.size)
+            var decibels = address(kAudioDevicePropertyVolumeDecibels, kAudioDevicePropertyScopeOutput, element)
+            if AudioObjectHasProperty(device, &decibels),
+               AudioObjectGetPropertyData(device, &decibels, 0, nil, &valueSize, &value) == noErr {
+                levels.append(value)
+            } else if let volume {
+                var convert = address(kAudioDevicePropertyVolumeScalarToDecibels, kAudioDevicePropertyScopeOutput,
+                                      element)
+                value = Float32(volume)
+                if AudioObjectHasProperty(device, &convert),
+                   AudioObjectGetPropertyData(device, &convert, 0, nil, &valueSize, &value) == noErr {
+                    levels.append(value)
+                }
+            }
+            if element == kAudioObjectPropertyElementMain, !levels.isEmpty { break }
+        }
+        return levels.max()
     }
 
     func detach(_ view: any MixerMeterDisplay) {
@@ -146,11 +211,11 @@ final class MixerLevelMeters {
             readers[app.id] = MixerLevelReader(objects: app.audioObjects, hostUID: hostUID)
             levels[app.id] = levels[app.id] ?? (MixerMeterLevel(), MixerMeterLevel())
         }
-        // Everything the Mac plays, heard before the output's own volume:
-        // the level arriving at the speakers, silent while they are muted.
+        // Everything the Mac plays, with the output's own volume applied, as
+        // a desk's main meter sits after its fader. Silent while muted.
         let main = Self.mainOutputID
         if shown.contains(main), let hostUID {
-            gains[main] = mixer.systemOutputMuted == true ? 0 : 1
+            gains[main] = mixer.systemOutputMuted == true ? 0 : outputGain
             wanted.insert(main)
             if (readers[main] as? MixerLevelReader)?.hostUID != hostUID {
                 (readers[main] as? MixerLevelReader)?.stop()
