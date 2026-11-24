@@ -2,29 +2,57 @@
 > **This is an unofficial fork of [Vorssaint](https://github.com/vorssaint/vorssaint-utils).** It is not made,
 > endorsed or supported by the Vorssaint project. Please do not ask the original maintainer for help with it.
 
-# What this fork adds
+# JaysHub Mixer Plus
 
 This fork keeps everything in Vorssaint and rebuilds its volume mixer as a small mixing desk, with features
-brought over from another project for a personal per app mixer I built. The rest of the app is unchanged.
+brought over from another project for a personal per app mixer I built. It also adds a watch for stuck keys.
+The rest of the app is unchanged.
 
 AI DISCLAIMER: AI has been used to assist with the developing of this fork.
 
 <p align="center">
-  <img src="docs/fork/mixer-desk.png" width="460" alt="The volume mixer as a desk of channel strips: three apps with Audio Unit effects, pan knobs, faders and stereo meters, beside the microphone, system sounds and main output">
+  <img src="docs/fork/mixer-desk.png" width="400" alt="The JaysHub Mixer Plus panel: the volume mixer as a desk of channel strips for the microphone, two apps, system sounds and the main output. A playing app shows its fader, pan knob and stereo meter at −2.5 dB, and the output's meter reads lower, at −27 dB, because its fader is turned down">
 </p>
+
+## What's different
+
+### The mixer is a mixing desk
 
 | Addition | What it does |
 |---|---|
-| **Mixing-desk layout** | The mixer tab is a row of vertical channel strips: microphone on the left, one strip per app, system sounds and the main output on the right. The panel widens as apps appear and scrolls sideways past eight strips. |
-| **Audio Unit effects** | Add any installed Audio Unit effect to an app, in a chain, before its fader. Plugins load out of process, so a crashing plugin cannot take the app down. Chains and plugin settings are saved per app. |
+| **Channel strips** | The mixer tab is a row of vertical strips: microphone on the left, one strip per app, system sounds and the main output on the right. The panel widens as apps appear and scrolls sideways past eight strips. |
+| **Audio Unit effects** | Add any installed Audio Unit effect to an app, in a chain, before its fader. Plugins load out of process, so a crashing plugin cannot take the app down. Chains and plugin settings are saved per app and included in settings backup. |
 | **Pan** | A pan knob on every app. |
 | **Solo** | Silence every other app with one key. Never saved, so it cannot be left on by accident. |
-| **Level meters** | A stereo meter and a held peak readout on every playing app, measured after effects, fader and pan, plus a meter on the main output. |
+| **Level meters** | A stereo meter and a held peak readout on every playing app, measured after its effects, fader and pan. The main output has one too, after its own fader. |
 | **Recently active apps** | With "Hide inactive apps" on, an app stays listed for a chosen time after it goes quiet (10 seconds to 5 minutes), and one button shows every open app again. |
 | **Fader feel** | 100% sits about four fifths of the way up, leaving the rest for the boost to 200%. A drag near the mark lands on it; a double-click resets to it. |
 
-Meters and effects run only while they are needed: a meter measures only while its strip is on screen, and an app
-at 100% with no pan or effects is still left completely untouched, as in Vorssaint.
+Meters and effects run only while they are needed: a meter measures only while its strip is on screen, and an
+app at 100% with no pan or effects is still left completely untouched, as in Vorssaint.
+
+### A watch for stuck keys
+
+<p align="center">
+  <img src="docs/fork/stuck-keys.png" width="600" alt="The Stuck keys page in Settings: a switch, three adjustable rules, automatic release for keys held by software, and a log of recent incidents">
+</p>
+
+Tells you when a key stays down with nobody holding it, and offers to release it. It recognises:
+
+- a modifier a program pressed and never released;
+- a modifier that reads as down with neither of its keys pressed;
+- a modifier held with no other input, or held for a very long stretch;
+- an ordinary key held far too long.
+
+It reads whether keys are down about once a second and installs no event tap, so it cannot slow typing, and it
+never sees what you type. Each incident is logged with the time, the reason and the app that was in front, which
+makes it possible to tell a faulty keyboard from misbehaving software. Find it in Settings under Utilities.
+
+### Its own name
+
+The app is called JaysHub Mixer Plus, with its own mark and icon, and says so throughout. It credits Vorssaint
+in its header, in About and on its Support page, where the original project's donation link sits below this
+fork's.
 
 ## Status
 
@@ -32,18 +60,23 @@ at 100% with no pan or effects is still left completely untouched, as in Vorssai
 - **Not yet covered:** apps routed to AirPlay ignore pan and effects, and the Dynamic Island and the Settings
   window still show the original mixer layout.
 - **Effects are stereo.** On an output with more than two channels they apply to the front pair.
+- **Translations of the new text are machine-written** and have not been checked by native speakers.
 
 ## Build
 
 ```sh
 git clone https://github.com/ThisIsJaayB/vorssaint-utils.git
 cd vorssaint-utils
-git switch mixer-plus
 ./build.sh --dev --install
 ```
 
-This builds the separate Developer variant, which installs beside an official Vorssaint without replacing it.
-Xcode Command Line Tools are the only requirement.
+This builds and installs JaysHub Mixer Plus. Xcode Command Line Tools are the only requirement.
+
+## Support
+
+If the additions here are useful to you, you can [buy me a coffee](https://buymeacoffee.com/jayshub). Most of
+this app is the work of the Vorssaint project, so please consider
+[supporting them](https://buymeacoffee.com/vorssaint) too.
 
 ## Licence and names
 

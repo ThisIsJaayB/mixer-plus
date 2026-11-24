@@ -41,11 +41,14 @@ struct StuckKeySettingsCard: View {
             }
             if enabled {
                 Divider()
-                picker(strings.aloneTitle, selection: $aloneSeconds, choices: StuckKeyDetector.Thresholds.aloneChoices)
-                picker(strings.longTitle, selection: $longHoldSeconds,
+                picker("command", strings.aloneTitle, selection: $aloneSeconds,
+                       choices: StuckKeyDetector.Thresholds.aloneChoices)
+                picker("timer", strings.longTitle, selection: $longHoldSeconds,
                        choices: StuckKeyDetector.Thresholds.longHoldChoices)
-                picker(strings.keyTitle, selection: $keySeconds, choices: StuckKeyDetector.Thresholds.keyChoices)
-                SettingsRow(symbol: nil, title: strings.autoRelease, caption: strings.autoReleaseCaption) {
+                picker("keyboard", strings.keyTitle, selection: $keySeconds,
+                       choices: StuckKeyDetector.Thresholds.keyChoices)
+                SettingsRow(symbol: "arrow.up.to.line", title: strings.autoRelease,
+                            caption: strings.autoReleaseCaption) {
                     Toggle(strings.autoRelease, isOn: $autoRelease).labelsHidden().toggleStyle(.switch)
                 }
                 Divider()
@@ -58,8 +61,8 @@ struct StuckKeySettingsCard: View {
         .onChange(of: keySeconds) { watch.syncWithPreferences() }
     }
 
-    private func picker(_ title: String, selection: Binding<Int>, choices: [Int]) -> some View {
-        SettingsRow(symbol: nil, title: title) {
+    private func picker(_ symbol: String, _ title: String, selection: Binding<Int>, choices: [Int]) -> some View {
+        SettingsRow(symbol: symbol, title: title) {
             Picker(title, selection: selection) {
                 ForEach(choices, id: \.self) { seconds in
                     Text(seconds == 0 ? strings.off : MixerPlusStrings.duration(seconds, l10n.language)).tag(seconds)
