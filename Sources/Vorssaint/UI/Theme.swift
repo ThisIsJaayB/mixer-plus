@@ -228,6 +228,8 @@ func appDelegate() -> AppDelegate? {
 struct BrandMark: View {
     var width: CGFloat
     var tint: Color = .white
+    /// Width over height of the mark the app's layouts were designed around.
+    private static let designAspect: CGFloat = 1.97
 
     private static let mark: NSImage? = {
         guard let url = Bundle.main.url(forResource: "BrandMark", withExtension: "png") else { return nil }
@@ -243,7 +245,10 @@ struct BrandMark: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .foregroundStyle(tint)
-                .frame(width: width)
+                // Every caller sizes the mark by the width of the original,
+                // wide one. The box keeps that shape, so a taller mark fits
+                // the height those layouts were drawn for.
+                .frame(width: width, height: width / Self.designAspect)
         } else {
             Image(systemName: "circle.fill")
                 .resizable()

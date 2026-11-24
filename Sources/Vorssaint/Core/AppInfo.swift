@@ -5,10 +5,15 @@ import Foundation
 
 /// Static identity of the app, shared by UI, notifications and tooling.
 enum AppInfo {
-    static let name = "Vorssaint"
+    static let name = "JaysHub Mixer Plus"
+    /// Shown under the name wherever the app introduces itself: this is a
+    /// fork, and the project it comes from is credited by name.
+    static let forkCredit = "A fork of Vorssaint"
     static let copyright = "© 2026 Vorssaint"
     static let websiteURL = URL(string: "https://vorssaint.com")!
-    static let repositoryURL = URL(string: "https://github.com/vorssaint/vorssaint-utils")!
+    static let repositoryURL = URL(string: "https://github.com/ThisIsJaayB/vorssaint-utils")!
+    /// The project this fork is built from.
+    static let originalRepositoryURL = URL(string: "https://github.com/vorssaint/vorssaint-utils")!
     static let coffeeURL = URL(string: "https://buymeacoffee.com/vorssaint")!
     static let discordURL = URL(string: "https://discord.gg/M6BwWH4BJp")!
     static let socialURL = URL(string: "https://x.com/vorssaint")!

@@ -298,7 +298,7 @@ struct MenuPanelView: View {
         let bannerHeight = updates.state.showsMenuPanelBanner
             ? (max(updateBannerHeight, 48) + 12)
             : 0
-        return 180 + bannerHeight
+        return 180 + MenuPanelHeader.heightOverMark + bannerHeight
     }
 
     private var estimatedNavigableContentHeight: CGFloat {
@@ -521,12 +521,28 @@ private struct MenuPanelHeader: View {
 
     var body: some View {
         ZStack {
-            BrandMark(width: 48, tint: markTint)
-                .frame(height: 28)
-                .accessibilityHidden(true)
+            // The mark with the name and the fork line beside it, centred as a group.
+            HStack(spacing: 9) {
+                BrandMark(width: 56, tint: markTint)
+                    .frame(width: 24, height: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(AppInfo.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(markTint)
+                    Text(AppInfo.forkCredit)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
 
             if AppInfo.isBeta {
                 HStack {
+                    // The name sits on the left now, so the badge joins the
+                    // feedback button on the right.
+                    Spacer()
+
                     Text(l10n.s.betaBadgeLabel.uppercased())
                         .font(.system(size: 9, weight: .bold))
                         .padding(.horizontal, 6)
@@ -534,8 +550,6 @@ private struct MenuPanelHeader: View {
                         .background(Color.orange.opacity(0.18))
                         .foregroundStyle(.orange)
                         .clipShape(Capsule())
-
-                    Spacer()
 
                     Button {
                         appDelegate()?.openFeedbackWindow()
@@ -551,10 +565,15 @@ private struct MenuPanelHeader: View {
                 }
             }
         }
-        .frame(height: 28)
+        .frame(height: MenuPanelHeader.height)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
     }
+
+    /// The mark with the app's name and the fork line beside it. The panel's
+    /// height sums add what this is taller than the mark alone.
+    static let height: CGFloat = 30
+    static let heightOverMark: CGFloat = height - 28
 
     private var markTint: Color {
         colorScheme == .light ? Color(white: 0.03) : .white
