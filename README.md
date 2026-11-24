@@ -5,7 +5,9 @@
 # What this fork adds
 
 This fork keeps everything in Vorssaint and rebuilds its volume mixer as a small mixing desk, with features
-brought over from AuxBar, a per-app mixer by the same author. The rest of the app is unchanged.
+brought over from another project for a personal per app mixer I built. The rest of the app is unchanged.
+
+AI DISCLAIMER: AI has been used to assist with the developing of this fork.
 
 <p align="center">
   <img src="docs/fork/mixer-desk.png" width="460" alt="The volume mixer as a desk of channel strips: three apps with Audio Unit effects, pan knobs, faders and stereo meters, beside the microphone, system sounds and main output">
