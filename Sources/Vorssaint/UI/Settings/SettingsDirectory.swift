@@ -236,6 +236,7 @@ enum SettingsDirectory {
                          state: SettingsSearchState)
         -> [(title: String, items: [SettingsDirectoryItem])] {
         let categories = FeatureStrings.settingsCategories(language)
+        let stuckKeys = StuckKeyStrings.localized(language)
         let quitProtection = FeatureStrings.quitProtection(language)
         let brightness = FeatureStrings.brightness(language)
         let bluetooth = FeatureStrings.bluetoothSleep(language)
@@ -599,6 +600,9 @@ enum SettingsDirectory {
                                         .screenCaptureFeatureKeywords(s, language: language)),
                 SettingsDirectoryItem(page: .urlCleaner, title: s.urlCleanerName, icon: "link"),
                 SettingsDirectoryItem(page: .keyDebounce, title: s.keyDebounceName, icon: "keyboard"),
+                SettingsDirectoryItem(page: .stuckKeys, title: stuckKeys.title, icon: "keyboard.badge.ellipsis",
+                                      keywords: [stuckKeys.enable, stuckKeys.aloneTitle, stuckKeys.longTitle,
+                                                 stuckKeys.keyTitle, stuckKeys.autoRelease, stuckKeys.logTitle]),
                 SettingsDirectoryItem(page: .superKey,
                                       title: FeatureStrings.superKey(language).pageTitle,
                                       icon: superKeySource.systemImage,

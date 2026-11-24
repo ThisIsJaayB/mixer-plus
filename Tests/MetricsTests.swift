@@ -84,6 +84,7 @@ struct MetricsTests {
                 MixerOutputProbeTests.run(suite)
             }),
             ("audio-priority", { AudioPriorityTests.run(suite) }),
+            ("stuck-keys", { StuckKeyDetectorTests.run(suite) }),
             ("shelf", { ShelfFeatureTests.run(suite) }),
             ("overlays", { OverlayPanelTests.run(suite) }),
             ("updates", {

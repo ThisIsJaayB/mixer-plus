@@ -9,6 +9,8 @@ import Foundation
 enum SettingsPage: Hashable {
     case general, features, energy, monitor
     case mouse, switcher, dock, keyDebounce, superKey, cutPaste, autoQuit, quitProtection, cleaner, uninstaller, urlCleaner, homebrew, appUpdates, media, clipboard, windowLayout, shelf, quickTools, textSnippets, screenshot, radialMenu, commandBar, killProcess, portManager, notch, notchMascot
+    /// The fork's stuck-key watch. Part of the app, so it always shows.
+    case stuckKeys
     case shortcuts, advanced, about, releaseNotes, support
 }
 
@@ -486,7 +488,7 @@ enum FeatureVisibilitySupport {
         case .notchMascot: return [.notchMascot]
         case .radialMenu: return [.radialMenu]
         case .commandBar: return [.commandBar]
-        case .general, .features, .shortcuts, .advanced, .about, .releaseNotes, .support:
+        case .general, .features, .stuckKeys, .shortcuts, .advanced, .about, .releaseNotes, .support:
             return []
         }
     }

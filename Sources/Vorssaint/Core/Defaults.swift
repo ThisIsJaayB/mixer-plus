@@ -167,6 +167,12 @@ enum DefaultsKey {
     static let mixerCallAppVolumeEnabled = "mixerCallAppVolumeEnabled" // bundle ids explicitly allowed to process call audio despite screen-sharing echo
     static let mixerUniversalOutputDevice = "mixerUniversalOutputDevice" // retired: all-apps output saved by 3.4.1 betas
     static let mixerShowFinder = "mixerShowFinder"
+    static let stuckKeyWatchEnabled = "stuckKeyWatchEnabled" // watch for keys that stay down with nobody holding them
+    static let stuckKeyIncidents = "stuckKeyIncidents"       // log of stuck keys: when, which, why. Never what was typed
+    static let stuckKeyAloneSeconds = "stuckKeyAloneSeconds"       // a modifier held with no other input
+    static let stuckKeyLongHoldSeconds = "stuckKeyLongHoldSeconds" // a modifier held whatever else happens; 0 turns the rule off
+    static let stuckKeyHeldSeconds = "stuckKeyHeldSeconds"         // an ordinary key held; 0 turns the rule off
+    static let stuckKeyAutoRelease = "stuckKeyAutoRelease"         // release keys a program left down without asking
     static let mixerAppArrangement = "mixerAppArrangement"
     static let mixerHideInactiveApps = "mixerHideInactiveApps"
     static let mixerShowLevelMeters = "mixerShowLevelMeters" // live level behind each app fader while its row is on screen
@@ -1369,6 +1375,11 @@ enum Defaults {
         DefaultsKey.mixerHideInactiveApps: false,
         DefaultsKey.mixerInactiveAppLingerSeconds: MixerRecentActivity.defaultLinger,
         DefaultsKey.mixerShowLevelMeters: true,
+        DefaultsKey.stuckKeyWatchEnabled: true,
+        DefaultsKey.stuckKeyAloneSeconds: StuckKeyDetector.Thresholds.aloneChoices[1],
+        DefaultsKey.stuckKeyLongHoldSeconds: StuckKeyDetector.Thresholds.longHoldChoices[2],
+        DefaultsKey.stuckKeyHeldSeconds: StuckKeyDetector.Thresholds.keyChoices[2],
+        DefaultsKey.stuckKeyAutoRelease: false,
         DefaultsKey.mixerAppArrangement: "",
         DefaultsKey.mixerLowerVolumeOnHeadphonesDisconnect: false,
         DefaultsKey.mixerHeadphonesDisconnectVolumePercent: defaultMixerHeadphonesDisconnectVolumePercent,
