@@ -14,7 +14,10 @@ enum AppInfo {
     static let repositoryURL = URL(string: "https://github.com/ThisIsJaayB/vorssaint-utils")!
     /// The project this fork is built from.
     static let originalRepositoryURL = URL(string: "https://github.com/vorssaint/vorssaint-utils")!
+    /// Where to support the original project, whose work most of this app is.
     static let coffeeURL = URL(string: "https://buymeacoffee.com/vorssaint")!
+    /// Where to support this fork.
+    static let forkCoffeeURL = URL(string: "https://buymeacoffee.com/jayshub")!
     static let discordURL = URL(string: "https://discord.gg/M6BwWH4BJp")!
     static let socialURL = URL(string: "https://x.com/vorssaint")!
 

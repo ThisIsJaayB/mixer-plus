@@ -950,8 +950,33 @@ struct SupportSettings: View {
     }
 
     var body: some View {
-        ScrollView {
+        let fork = ForkStrings.localized(l10n.language)
+        return ScrollView {
             VStack(spacing: 18) {
+                // This fork first, then the project it is built on, each
+                // asked for in the same way.
+                BrandBadge(size: 78)
+                VStack(spacing: 7) {
+                    Text(fork.forkSupportHeading)
+                        .font(.title2.bold())
+                        .multilineTextAlignment(.center)
+                    Text(fork.forkSupportMessage)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 460)
+                }
+                Button {
+                    openURL(AppInfo.forkCoffeeURL)
+                } label: {
+                    Label(fork.forkSupportButton, systemImage: "cup.and.saucer.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Divider().frame(maxWidth: 460).padding(.vertical, 6)
+
                 ZStack {
                     Circle()
                         .fill(Theme.spaceGradient)
@@ -959,6 +984,18 @@ struct SupportSettings: View {
                     Image(systemName: "heart.fill")
                         .font(.system(size: 29, weight: .semibold))
                         .foregroundStyle(.white)
+                }
+                VStack(spacing: 5) {
+                    Text(fork.originalProjectHeading)
+                        .font(.caption.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(.secondary)
+                    Text(fork.originalProjectMessage)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 460)
                 }
 
                 VStack(spacing: 7) {
@@ -994,7 +1031,8 @@ struct SupportSettings: View {
                             .fixedSize(horizontal: false, vertical: true)
 
                         Button {
-                            openURL(AppInfo.repositoryURL)
+                            // The star is for the original project.
+                            openURL(AppInfo.originalRepositoryURL)
                         } label: {
                             Label(l10n.s.supportIntroStarButton, systemImage: "star.fill")
                         }
