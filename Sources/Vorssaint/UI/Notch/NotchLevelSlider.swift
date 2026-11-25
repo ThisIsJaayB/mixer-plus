@@ -27,6 +27,8 @@ struct NotchLevelSlider: NSViewRepresentable {
     /// A scroll over the bar moves the level; the playback position is not
     /// scrolled, since each step would seek.
     var scrollable = true
+    /// A double click sets this value, such as unity on a fader.
+    var doubleClickValue: Double?
     var onEditingChanged: ((Bool) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -44,6 +46,12 @@ struct NotchLevelSlider: NSViewRepresentable {
         }
         cell.trackingChanged = { [weak coordinator = context.coordinator] editing in
             coordinator?.trackingChanged(editing)
+        }
+        slider.onDoubleClick = { [weak coordinator = context.coordinator] in
+            guard let coordinator, let value = coordinator.parent.doubleClickValue else { return false }
+            coordinator.stopEasing()
+            coordinator.parent.value = value
+            return true
         }
         slider.cell = cell
         slider.isVertical = vertical
@@ -146,6 +154,8 @@ private final class NotchLevelControl: NSSlider, SliderScrollTarget {
     var scrollable = true
     var acceptsSliderScroll: Bool { scrollable && isEnabled }
     var trackingChanged: ((Bool) -> Void)?
+    /// Returns whether the double click was taken.
+    var onDoubleClick: (() -> Bool)?
     private var scroll = SliderScroll()
     private var scrolling = false
     private var pendingScrollEvents: [NSEvent] = []
@@ -169,6 +179,7 @@ private final class NotchLevelControl: NSSlider, SliderScrollTarget {
 
     override func mouseDown(with event: NSEvent) {
         cancelScroll()
+        if event.clickCount == 2, onDoubleClick?() == true { return }
         super.mouseDown(with: event)
     }
 

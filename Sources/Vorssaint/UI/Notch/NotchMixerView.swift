@@ -19,6 +19,8 @@ struct NotchMixerView: View {
     @AppStorage(DefaultsKey.mixerAppArrangement) private var arrangementValue = ""
     @AppStorage(DefaultsKey.mixerHideInactiveApps) private var hideInactiveApps = false
     @State private var showingOptions = false
+    /// The app whose pan and effects are open over the faders.
+    @State private var detailAppID: String?
     @State private var editingVolumeID: String?
     @State private var draggingAppID: String?
     @State private var dropTarget: MixerAppDropTarget?
@@ -68,7 +70,7 @@ struct NotchMixerView: View {
         })
         .onAppear { mixer.refreshApps() }
         // Escape closes the options before the island.
-        .onChange(of: showingOptions) { _, showing in
+        .onChange(of: showingOptions || detailAppID != nil) { _, showing in
             guard !preview else { return }
             NotchService.shared.setPageLayer(.mixer, close: showing ? closeOptions : nil)
         }
@@ -77,13 +79,24 @@ struct NotchMixerView: View {
 
     private func toggleOptions() {
         editingVolumeID = nil
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { showingOptions.toggle() }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+            detailAppID = nil
+            showingOptions.toggle()
+        }
     }
 
-    /// What Escape does: it only ever closes the options.
+    /// What Escape does: it only ever closes what is open over the faders,
+    /// an app's pan and effects before the options.
     private func closeOptions() {
         editingVolumeID = nil
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { showingOptions = false }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+            if detailAppID != nil { detailAppID = nil } else { showingOptions = false }
+        }
+    }
+
+    private func showDetail(_ app: MixerApp?) {
+        editingVolumeID = nil
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { detailAppID = app?.id }
     }
 
     @ViewBuilder private var desk: some View {
@@ -91,6 +104,8 @@ struct NotchMixerView: View {
             NotchEmptyView(symbol: NotchModule.mixer.symbol, message: l10n.s.mixerUnavailable)
         } else if mixer.needsPermission {
             permission
+        } else if let app = mixer.apps.first(where: { $0.id == detailAppID && !$0.isBypassed }) {
+            NotchMixerAppDetail(app: app, close: { showDetail(nil) })
         } else if apps.isEmpty {
             NotchEmptyView(symbol: NotchModule.mixer.symbol, message: l10n.s.mixerEmpty)
         } else {
@@ -102,7 +117,8 @@ struct NotchMixerView: View {
                               isPinned: arrangement.isPinned(app.persistenceID),
                               togglePin: { updateArrangement { $0.togglePin(app.persistenceID ?? "") } },
                               moveBack: moveAction(for: app, offset: -1, ids: ids),
-                              moveForward: moveAction(for: app, offset: 1, ids: ids))
+                              moveForward: moveAction(for: app, offset: 1, ids: ids),
+                              openDetail: { showDetail(app) })
                     .modifier(MixerAppReorderModifier(
                         id: app.persistenceID,
                         icon: ResponsibleProcess.icon(for: app.ownerPid, pointSize: 32),
@@ -195,6 +211,7 @@ private struct NotchMasterFader: View {
     let height: CGFloat
     @Binding var editingVolumeID: String?
     @ObservedObject private var mixer = AppVolumeMixer.shared
+    @ObservedObject private var outputGain = MixerOutputGain.shared
     @ObservedObject private var l10n = L10n.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var level: Double? { mixer.systemOutputVolume.map { mixer.systemOutputMuted == true ? 0 : $0 } }
@@ -227,11 +244,17 @@ private struct NotchMasterFader: View {
                 NotchLevelSlider(value: Binding(get: { level }, set: { adjustOutput(volume: $0) }),
                                  label: l10n.s.mixerSystemOutputTitle, vertical: true, trackThickness: 28)
                     .frame(width: 40, height: NotchMixerFaderLayout.trackHeight(in: height))
-                NotchEditablePercent(percent: MixerRoutingSupport.displayPercent(forVolume: level), maximum: 100,
-                                     editorID: "notch-system-output", editingID: $editingVolumeID,
-                                     label: l10n.s.mixerSystemOutputTitle, height: 28) {
-                    adjustOutput(volume: $0)
+                    .notchMixerMeter(MixerLevelMeters.mainOutputID)
+                VStack(spacing: 0) {
+                    NotchEditablePercent(percent: MixerRoutingSupport.displayPercent(forVolume: level), maximum: 100,
+                                         editorID: "notch-system-output", editingID: $editingVolumeID,
+                                         label: l10n.s.mixerSystemOutputTitle, height: 17) {
+                        adjustOutput(volume: $0)
+                    }
+                    NotchMixerDecibels(text: muted ? MixerMeterLevel.readout(MixerMeterLevel.floorDB)
+                                       : outputGain.readout)
                 }
+                .frame(height: 28)
             } else {
                 Text(l10n.s.mixerOutputUnavailable).font(.system(size: 10)).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -498,9 +521,13 @@ private struct NotchAppFader: View {
     let togglePin: () -> Void
     let moveBack: (() -> Void)?
     let moveForward: (() -> Void)?
+    let openDetail: () -> Void
     @ObservedObject private var mixer = AppVolumeMixer.shared
     @ObservedObject private var l10n = L10n.shared
     private var strings: MixerFeatureStrings { FeatureStrings.mixer(l10n.language) }
+    private var plus: MixerPlusStrings { .localized(l10n.language) }
+    private var detailTitle: String { "\(plus.pan) · \(plus.effects)" }
+    private static let muteTint = Color(red: 0.38, green: 0.72, blue: 1)
     private var percent: Int { MixerRoutingSupport.displayPercent(forVolume: app.volume) }
     private var sharingStrings: MixerScreenSharingStrings { .localized(l10n.language) }
     private var boosting: Bool { percent > 100 }
@@ -514,10 +541,14 @@ private struct NotchAppFader: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            icon
+            Button(action: openDetail) { icon }
+                .buttonStyle(.plain)
+                .disabled(app.isBypassed)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
-                .help(app.supportsVolumeOverride && !app.isBypassed ? sharingStrings.sharingWarning : app.name)
+                .help(app.supportsVolumeOverride && !app.isBypassed ? sharingStrings.sharingWarning
+                      : app.isBypassed ? app.name : "\(app.name)\n\(detailTitle)")
+                .accessibilityLabel(app.isBypassed ? app.name : "\(detailTitle): \(app.name)")
                 .overlay(alignment: .trailing) {
                     if app.persistenceID != nil || !app.isBypassed { actionsMenu }
                 }
@@ -533,48 +564,40 @@ private struct NotchAppFader: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                NotchLevelSlider(value: Binding(get: { app.volume }, set: { mixer.setVolume($0, for: app) }),
-                                 label: app.name, range: 0...AppVolumeMixer.maxVolume,
-                                 tint: boosting ? .orange : .white, vertical: true, trackThickness: 28, marker: 1,
-                                 valueLabel: "\(percent)%")
+                // Unity sits most of the way up, as on the panel's desk, so
+                // the long stretch below it sets a level and the rest boosts.
+                NotchLevelSlider(value: Binding(
+                                     get: { MixerFaderScale.position(forVolume: app.volume, maximum: AppVolumeMixer.maxVolume) },
+                                     set: { mixer.setVolume(MixerFaderScale.volume(atPosition: $0, maximum: AppVolumeMixer.maxVolume),
+                                                            for: app) }),
+                                 label: app.name, tint: boosting ? .orange : .white, vertical: true,
+                                 trackThickness: 28, marker: MixerFaderScale.unityPosition,
+                                 valueLabel: "\(percent)%", doubleClickValue: MixerFaderScale.unityPosition)
                     .frame(width: 40, height: NotchMixerFaderLayout.trackHeight(in: height))
-                NotchEditablePercent(percent: percent, maximum: Int(AppVolumeMixer.maxVolume * 100),
-                                     editorID: "notch-app:\(app.id)", editingID: $editingVolumeID,
-                                     label: app.name, tint: boosting ? .orange : .secondary,
-                                     boosting: boosting, height: 28) {
-                    mixer.setVolume($0, for: app)
-                }
-                .frame(maxWidth: .infinity)
-                .overlay(alignment: .leading) {
-                    Button { mixer.setVolume(1, for: app) } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(boosting ? Color.orange : Color.secondary)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
+                    .notchMixerMeter(app.id)
+                HStack(spacing: 2) {
+                    MixerDeskKey(letter: "M", isOn: muted, tint: Self.muteTint,
+                                 help: "\(plus.mute): \(app.name)") { mixer.toggleMute(app) }
+                    VStack(spacing: 0) {
+                        NotchEditablePercent(percent: percent, maximum: Int(AppVolumeMixer.maxVolume * 100),
+                                             editorID: "notch-app:\(app.id)", editingID: $editingVolumeID,
+                                             label: app.name, tint: boosting ? .orange : .secondary,
+                                             boosting: boosting, height: 17) {
+                            mixer.setVolume($0, for: app)
+                        }
+                        NotchMixerDecibels(text: MixerMeterLevel.faderReadout(volume: app.volume))
                     }
-                    .buttonStyle(NotchButtonStyle(cornerRadius: 5))
-                    .opacity(percent == 100 ? 0 : 1)
-                    .disabled(percent == 100)
-                    .help(l10n.s.mixerResetTooltip)
-                    .accessibilityLabel(l10n.s.mixerResetTooltip)
-                }
-                .overlay(alignment: .trailing) {
-                    Button { mixer.toggleMute(app) } label: {
-                        Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(muted ? Color.red : Color.secondary)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(NotchButtonStyle(cornerRadius: 5))
-                    .accessibilityLabel(muted ? l10n.s.actionUnmute : l10n.s.actionMute)
+                    .frame(maxWidth: .infinity)
+                    MixerDeskKey(letter: "S", isOn: mixer.soloedIDs.contains(app.id), tint: .yellow,
+                                 help: "\(plus.solo): \(app.name)") { mixer.toggleSolo(app) }
                 }
                 .frame(height: 28)
             }
         }
         .frame(maxWidth: .infinity)
         .frame(height: height, alignment: .top)
+        .opacity(app.isSilencedBySolo ? 0.55 : 1)
+        .onAppear { MixerEffects.shared.load(app) }
         .contextMenu { actions }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(app.name)
@@ -592,6 +615,18 @@ private struct NotchAppFader: View {
                 Circle().fill(.green).frame(width: 7, height: 7)
                     .overlay(Circle().stroke(.black, lineWidth: 1.2))
                     .offset(x: 1, y: 1)
+                    .accessibilityHidden(true)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            // Pan or effects at work show on the icon that opens them.
+            if !app.isBypassed, app.hasEffects || app.pan != 0 {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 12, height: 12)
+                    .background(Color(red: 0.24, green: 0.47, blue: 0.82), in: Circle())
+                    .offset(x: 3, y: -2)
                     .accessibilityHidden(true)
             }
         }
@@ -646,6 +681,7 @@ private struct NotchAppFader: View {
         }
         if !app.isBypassed {
             if app.persistenceID != nil { Divider() }
+            Button(action: openDetail) { Label(detailTitle, systemImage: "slider.horizontal.3") }
             Picker(l10n.s.mixerOutputTooltip, selection: outputSelection) {
                 Text(l10n.s.mixerOutputDefault).tag(MixerRoutingSupport.systemDefaultSelectionID)
                 ForEach(mixer.outputDevices) { device in
@@ -681,5 +717,77 @@ private struct NotchAppFader: View {
                                          for: app)
             }
         )
+    }
+}
+
+/// A fader's level in dB, under its percentage.
+private struct NotchMixerDecibels: View {
+    let text: String
+
+    var body: some View {
+        Text(text + " dB")
+            .font(.system(size: 8, weight: .medium)).monospacedDigit()
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .frame(height: 10)
+            .accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    /// The live level beside a fader's track, where the setting shows them.
+    func notchMixerMeter(_ id: String) -> some View { modifier(NotchMixerMeter(id: id)) }
+}
+
+private struct NotchMixerMeter: ViewModifier {
+    let id: String
+    @AppStorage(DefaultsKey.mixerShowLevelMeters) private var showLevelMeters = true
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .trailing) {
+            if showLevelMeters {
+                MixerStereoMeter(meterID: id)
+                    .frame(width: 7)
+                    .padding(.vertical, 2)
+                    .offset(x: 6)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// An app's pan and effects, over the faders: what the panel's desk keeps on
+/// each strip and a short column has no room for.
+private struct NotchMixerAppDetail: View {
+    let app: MixerApp
+    let close: () -> Void
+    @ObservedObject private var mixer = AppVolumeMixer.shared
+    @ObservedObject private var l10n = L10n.shared
+    private var strings: MixerPlusStrings { .localized(l10n.language) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 6) {
+                Image(nsImage: ResponsibleProcess.icon(for: app.ownerPid, pointSize: 32))
+                    .resizable()
+                    .frame(width: 28, height: 28)
+                    .accessibilityHidden(true)
+                Text(app.name).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                MixerPanKnob(value: Binding(get: { app.pan }, set: { mixer.setPan($0, for: app) }),
+                             strings: strings, appName: app.name, size: 30)
+            }
+            .frame(width: 84)
+            Rectangle().fill(.white.opacity(0.12)).frame(width: 1).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(strings.effects.uppercased(with: Locale(identifier: l10n.language.rawValue)))
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                ScrollView(.vertical, showsIndicators: false) {
+                    MixerEffectsList(app: app).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            NotchIconButton(symbol: "xmark", title: l10n.s.menuClose, selected: false, action: close)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
