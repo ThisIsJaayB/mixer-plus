@@ -3,6 +3,14 @@
 import AppKit
 import SwiftUI
 
+extension MixerMeterLevel {
+    /// An app fader's level in dB, from the curve the engine plays it with.
+    static func faderReadout(volume: Double) -> String {
+        let gain = MixerRoutingSupport.gain(forVolume: volume)
+        return readout(gain > 0 ? 20 * log10(gain) : floorDB)
+    }
+}
+
 /// A desk's vertical fader: a slim channel, a cap that slides along it, and
 /// optionally the levels the positions stand for.
 struct MixerVerticalFader: View {

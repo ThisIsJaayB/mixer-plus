@@ -41,6 +41,7 @@ struct MixerDesk: View {
     @ObservedObject private var audioPriority = AudioPriorityService.shared
     @ObservedObject private var micMute = MicMuteService.shared
     @ObservedObject private var effects = MixerEffects.shared
+    @ObservedObject private var outputGain = MixerOutputGain.shared
     @ObservedObject private var catalog = MixerEffectCatalog.shared
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(DefaultsKey.mixerAppArrangement) private var arrangementValue = ""
@@ -98,7 +99,7 @@ struct MixerDesk: View {
         } readout: {
             if !app.isBypassed {
                 HStack(spacing: 2) {
-                    MixerReadoutBox { Text(faderReadout(app.volume)) }
+                    MixerReadoutBox { Text(MixerMeterLevel.faderReadout(volume: app.volume)) }
                     MixerReadoutBox { if showLevelMeters { MixerPeakReadout(meterID: app.id) } }
                 }
             }
@@ -177,12 +178,6 @@ struct MixerDesk: View {
         var updated = arrangement
         change(&updated)
         arrangementValue = updated.rawValue
-    }
-
-    /// The fader's level in dB, from the curve the engine plays it with.
-    private func faderReadout(_ volume: Double) -> String {
-        let gain = MixerRoutingSupport.gain(forVolume: volume)
-        return MixerMeterLevel.readout(gain > 0 ? 20 * log10(gain) : MixerMeterLevel.floorDB)
     }
 
     @ViewBuilder
@@ -358,8 +353,8 @@ struct MixerDesk: View {
             EmptyView()
         } readout: {
             HStack(spacing: 2) {
-                if let volume = mixer.systemOutputVolume {
-                    MixerReadoutBox { Text("\(MixerRoutingSupport.displayPercent(forVolume: volume))") }
+                if mixer.systemOutputVolume != nil {
+                    MixerReadoutBox { Text(outputGain.readout) }
                 }
                 MixerReadoutBox { if showLevelMeters { MixerPeakReadout(meterID: MixerLevelMeters.mainOutputID) } }
             }
